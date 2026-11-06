@@ -1,0 +1,117 @@
+"""Tests for image compositing, SVG generation, XML compliance, and accessibility."""
+
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+import pytest
+from PIL import Image
+
+from buildsite.composer import composite_property, find_assets_directory
+from buildsite.models import ContributionSnapshot, PropertyState, UserConfig
+from buildsite.progression import calculate_property_state
+from buildsite.svg_export import export_png_fallback, export_svg_to_file, generate_svg
+
+
+def test_composite_property_layers():
+    """Verify that compositing active layers produces a valid 1280x640 RGBA image."""
+    snap = ContributionSnapshot(user_id=123, login="alice", total_contributions=250, active_days=100)
+    cfg = UserConfig()
+    state = calculate_property_state(snap, cfg)
+
+    assets_dir = find_assets_directory()
+    assert assets_dir.is_dir()
+
+    img = composite_property(state, cfg, assets_dir=assets_dir)
+    assert isinstance(img, Image.Image)
+    assert img.size == (1280, 640)
+    assert img.mode == "RGBA"
+
+
+def test_svg_valid_xml_and_standards():
+    """Verify that generated SVG is well-formed XML and complies with security rules."""
+    snap = ContributionSnapshot(user_id=456, login="bob", total_contributions=350, active_days=120)
+    cfg = UserConfig()
+    state = calculate_property_state(snap, cfg)
+    assets_dir = find_assets_directory()
+    img = composite_property(state, cfg, assets_dir=assets_dir)
+
+    svg_str = generate_svg(state, cfg, img)
+
+    # 1. XML parse validity
+    root = ET.fromstring(svg_str)
+    assert "svg" in root.tag.lower()
+    assert root.attrib.get("viewBox") == "0 0 1280 640"
+    assert root.attrib.get("role") == "img"
+
+    # 2. Accessibility
+    assert "aria-labelledby" in root.attrib
+    assert "<title" in svg_str
+    assert "<desc" in svg_str
+    assert "bob" in svg_str
+    assert "350" in svg_str
+
+    # 3. Security: No external dependencies or scripts
+    assert "<script" not in svg_str.lower()
+    assert "<iframe" not in svg_str.lower()
+    assert "<foreignobject" not in svg_str.lower()
+    # Check that any http(s) URL is only the standard W3C XML namespace
+    for word in svg_str.split('"'):
+        if word.startswith("http://") or word.startswith("https://"):
+            assert "www.w3.org" in word
+
+    # 4. Self-contained image
+    assert "data:image/png;base64," in svg_str
+
+
+def test_animation_and_reduced_motion():
+    """Verify CSS animation keyframes and accessibility media query."""
+    snap = ContributionSnapshot(user_id=789, login="charlie", total_contributions=500, active_days=180)
+    cfg_subtle = UserConfig(animation="subtle")
+    state = calculate_property_state(snap, cfg_subtle)
+    assets_dir = find_assets_directory()
+    img = composite_property(state, cfg_subtle, assets_dir=assets_dir)
+
+    svg_subtle = generate_svg(state, cfg_subtle, img)
+    assert "@keyframes" in svg_subtle
+    assert "prefers-reduced-motion" in svg_subtle
+
+    # When animation is none
+    cfg_none = UserConfig(animation="none")
+    svg_none = generate_svg(state, cfg_none, img)
+    assert "@keyframes" not in svg_none
+
+
+def test_png_fallback_export(tmp_path: Path):
+    """Verify PNG fallback export creates valid image file on disk."""
+    snap = ContributionSnapshot(user_id=999, login="diana", total_contributions=75, active_days=40)
+    cfg = UserConfig()
+    state = calculate_property_state(snap, cfg)
+    assets_dir = find_assets_directory()
+    img = composite_property(state, cfg, assets_dir=assets_dir)
+
+    out_png = tmp_path / "fallback.png"
+    export_png_fallback(img, out_png)
+
+    assert out_png.is_file()
+    loaded = Image.open(out_png)
+    assert loaded.size == (1280, 640)
+
+
+def test_fixture_progression_visuals(tmp_path: Path):
+    """Visual regression test verifying property evolution at key contribution counts:
+    0, 1, 10, 50, 100, 250, 500, 1,000, and 10,000.
+    """
+    counts = [0, 1, 10, 50, 100, 250, 500, 1000, 10000]
+    assets_dir = find_assets_directory()
+    cfg = UserConfig()
+
+    for c in counts:
+        snap = ContributionSnapshot(user_id=1000 + c, login=f"dev-{c}", total_contributions=c, active_days=min(c, 200))
+        state = calculate_property_state(snap, cfg)
+        img = composite_property(state, cfg, assets_dir=assets_dir)
+        svg_str = generate_svg(state, cfg, img)
+
+        out_svg = tmp_path / f"buildsite_{c}.svg"
+        export_svg_to_file(svg_str, out_svg)
+        assert out_svg.is_file()
+        assert out_svg.stat().st_size > 1000
