@@ -22,16 +22,30 @@ logger = logging.getLogger(__name__)
 
 def find_assets_directory() -> Path:
     """Locate the bundled assets directory."""
-    # Check relative to this source file
+    import os
+
+    # 0. Environment variable override
+    env_dir = os.environ.get("BUILDSITE_ASSETS_DIR")
+    if env_dir and Path(env_dir).is_dir():
+        return Path(env_dir)
+
     candidates = [
+        # 1. Bundled package assets (inside buildsite/assets)
+        Path(__file__).resolve().parent / "assets",
+        # 2. Development source root (when running from source / git repo)
         Path(__file__).resolve().parent.parent.parent / "assets",
+        # 3. Current working directory or parent directories
         Path.cwd() / "assets",
         Path.cwd() / "buildsite" / "assets",
+        Path.cwd().parent / "assets",
     ]
     for c in candidates:
         if (c / "manifests" / "layer_manifest.json").is_file():
             return c
         if (c / "environment" / "plot_base.png").is_file():
+            return c
+    for c in candidates:
+        if c.is_dir():
             return c
     return candidates[0]
 

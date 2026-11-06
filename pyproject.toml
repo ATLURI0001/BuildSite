@@ -48,3 +48,10 @@ addopts = "-v --tb=short"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+buildsite = [
+    "assets/*",
+    "assets/*/*",
+    "assets/*/*/*"
+]

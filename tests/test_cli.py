@@ -25,6 +25,8 @@ def test_cli_init_command(tmp_path: Path, monkeypatch):
 
 def test_cli_validate_command(tmp_path: Path, monkeypatch):
     """Verify 'buildsite validate' passes on valid repository assets."""
+    repo_assets = Path(__file__).resolve().parent.parent / "assets"
+    monkeypatch.setenv("BUILDSITE_ASSETS_DIR", str(repo_assets))
     monkeypatch.chdir(tmp_path)
 
     # Init config first
@@ -38,6 +40,8 @@ def test_cli_validate_command(tmp_path: Path, monkeypatch):
 
 def test_cli_demo_command(tmp_path: Path, monkeypatch):
     """Verify 'buildsite demo' generates SVG and PNG output files."""
+    repo_assets = Path(__file__).resolve().parent.parent / "assets"
+    monkeypatch.setenv("BUILDSITE_ASSETS_DIR", str(repo_assets))
     monkeypatch.chdir(tmp_path)
     out_dir = tmp_path / "out_demo"
 
