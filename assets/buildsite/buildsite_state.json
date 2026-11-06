@@ -5,17 +5,18 @@
     "villa_finished",
     "driveway_garage",
     "swimming_pool",
-    "gardens"
+    "gardens",
+    "patio_pergola"
   ],
-  "hash_signature": "00c64007a91a377ee164d5a04fbe37575d66f0f1947eee23888a66ea32956afd",
-  "last_contribution_count": 327,
-  "last_updated": "2026-11-06T16:38:23.654426+00:00",
+  "hash_signature": "e0de1c014606070965af45903a808722211b13d0baabbdc8bd2b2ba7fa29406e",
+  "last_contribution_count": 500,
+  "last_updated": "2026-11-06T16:46:23.847678+00:00",
   "login": "demo-developer",
-  "milestone": "garden",
-  "progress_ratio": 0.17333333333333334,
+  "milestone": "patio_pergola",
+  "progress_ratio": 0.32666666666666666,
   "schema_version": 1,
   "seed": "12345678:demo-developer",
-  "total_contributions": 327,
+  "total_contributions": 500,
   "unlocked_features": [
     "plot_boundary",
     "surveyor_stakes",
@@ -45,7 +46,12 @@
     "cypress_trees",
     "ornamental_shrubs",
     "stone_walkway",
-    "Topsoil graded and emerald sod lawn rolled out"
+    "cedar_pergola",
+    "patio_dining",
+    "landscape_lighting",
+    "ambient_dusk_glow",
+    "Modern slatted cedar pergola assembled over patio",
+    "Outdoor dining lounge furniture and fire table placed"
   ],
   "user_id": 12345678,
   "variation": null
