@@ -30,6 +30,7 @@ from buildsite.progression import calculate_micro_evolution, calculate_property_
 from buildsite.property import derive_property_variation
 from buildsite.state import has_state_changed, load_state, save_state
 from buildsite.svg_export import export_png_fallback, export_svg_to_file, generate_svg
+from buildsite.turntable import generate_animated_turntable
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("buildsite")
@@ -230,6 +231,15 @@ def cmd_generate(args: argparse.Namespace) -> int:
         png_file = out_dir_path / "buildsite.png"
         export_png_fallback(composite_img, png_file)
         logger.info("Generated PNG fallback: %s", png_file.resolve())
+
+    # Generate 360-degree rotating turntable animation
+    webp_360 = out_dir_path / "buildsite_360.webp"
+    svg_360 = out_dir_path / "buildsite_360.svg"
+    try:
+        generate_animated_turntable(new_state, config, webp_360, svg_360, num_frames=16)
+        logger.info("Generated 360 Turntable: %s", webp_360.resolve())
+    except Exception as tt_exc:
+        logger.warning("Could not generate 360 turntable: %s", tt_exc)
 
     # Save state
     save_state(new_state, state_file)
