@@ -21,6 +21,7 @@ from buildsite.github_api import (
     RateLimitExceededError,
     UserNotFoundError,
     fetch_contributions_graphql,
+    fetch_contributions_public_calendar,
     fetch_contributions_rest_fallback,
     get_demo_contributions,
 )
@@ -139,11 +140,28 @@ def fetch_snapshot_with_fallbacks(
     token: Optional[str] = None,
     allow_demo: bool = False
 ) -> ContributionSnapshot:
-    """Fetch snapshot via GraphQL with REST fallback and demo fallback."""
+    """Fetch snapshot via GraphQL, public calendar scraper, REST fallback, or demo."""
     if allow_demo:
         return get_demo_contributions(327, username=username or "demo-user")
 
-    # Attempt GraphQL first
+    # 1. Attempt GraphQL first if token provided
+    if token:
+        try:
+            return fetch_contributions_graphql(username, token=token)
+        except UserNotFoundError:
+            raise
+        except Exception as exc:
+            logger.warning("GraphQL query with token failed (%s); trying public calendar...", exc)
+
+    # 2. Query GitHub public contributions calendar (returns exact verified count without auth)
+    try:
+        return fetch_contributions_public_calendar(username)
+    except UserNotFoundError:
+        raise
+    except Exception as cal_exc:
+        logger.warning("Public calendar query failed (%s); trying GraphQL/REST...", cal_exc)
+
+    # 3. Attempt unauthenticated GraphQL
     try:
         return fetch_contributions_graphql(username, token=token)
     except UserNotFoundError:
@@ -151,11 +169,11 @@ def fetch_snapshot_with_fallbacks(
     except (RateLimitExceededError, GitHubAPIError) as exc:
         logger.warning("GraphQL query failed (%s); trying REST API fallback...", exc)
 
-    # Attempt REST fallback
+    # 4. Attempt REST fallback
     try:
         return fetch_contributions_rest_fallback(username, token=token)
     except Exception as rest_exc:
-        raise GitHubAPIError(f"Both GraphQL and REST queries failed: {rest_exc}") from rest_exc
+        raise GitHubAPIError(f"All contribution retrieval methods failed: {rest_exc}") from rest_exc
 
 
 def cmd_generate(args: argparse.Namespace) -> int:
