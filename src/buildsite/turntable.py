@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import html
 import io
+import logging
 import math
 from pathlib import Path
 from typing import List, Tuple
@@ -19,6 +20,8 @@ from PIL import Image, ImageDraw
 
 from buildsite.models import PropertyState, UserConfig
 from buildsite.progression import calculate_micro_evolution, get_milestone_spec
+
+logger = logging.getLogger(__name__)
 
 WIDTH = 1280
 HEIGHT = 640
@@ -250,18 +253,23 @@ def generate_animated_turntable(
     num_frames: int = 16,
 ):
     """Generate 16-frame 360-degree rotating 3D architectural animation."""
+    if num_frames < 1:
+        raise ValueError("num_frames must be at least 1")
+
+    output_webp.parent.mkdir(parents=True, exist_ok=True)
+    output_svg.parent.mkdir(parents=True, exist_ok=True)
+
     estate_faces = build_estate_faces()
     frames: List[Image.Image] = []
-    print(f"Rendering {num_frames} depth-sorted 3D rotation frames for 360 turntable...")
+    logger.info("Rendering %d depth-sorted 3D rotation frames for 360 turntable...", num_frames)
 
     for i in range(num_frames):
         angle = (2.0 * math.pi * i) / num_frames
-        print(f"  Frame {i + 1}/{num_frames} (angle: {int(math.degrees(angle))} deg)...")
+        logger.debug("  Frame %d/%d (angle: %d deg)...", i + 1, num_frames, int(math.degrees(angle)))
         frame_img = render_scene_at_angle(estate_faces, angle)
         frames.append(frame_img)
 
     # 1. Save Animated WebP (smooth 350ms/frame)
-    output_webp.parent.mkdir(parents=True, exist_ok=True)
     frames[0].save(
         output_webp,
         save_all=True,
@@ -271,7 +279,7 @@ def generate_animated_turntable(
         optimize=True,
         quality=85,
     )
-    print(f"Saved Animated 360 Turntable WebP: {output_webp} ({output_webp.stat().st_size // 1024} KB)")
+    logger.info("Saved Animated 360 Turntable WebP: %s (%d KB)", output_webp, output_webp.stat().st_size // 1024)
 
     # 2. Build Multi-Frame Animated SVG with CSS keyframes
     spec = get_milestone_spec(state.milestone)
@@ -387,4 +395,4 @@ def generate_animated_turntable(
 
     with open(output_svg, "w", encoding="utf-8") as f:
         f.write(svg_anim)
-    print(f"Saved Animated 360 Turntable SVG: {output_svg} ({output_svg.stat().st_size // 1024} KB)")
+    logger.info("Saved Animated 360 Turntable SVG: %s (%d KB)", output_svg, output_svg.stat().st_size // 1024)
