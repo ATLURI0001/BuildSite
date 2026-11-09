@@ -115,3 +115,22 @@ def test_fixture_progression_visuals(tmp_path: Path):
         export_svg_to_file(svg_str, out_svg)
         assert out_svg.is_file()
         assert out_svg.stat().st_size > 1000
+
+
+def test_responsive_hud_layout_on_narrow_viewports():
+    """Verify that narrow canvas widths stack HUD cards vertically to prevent overlap."""
+    snap = ContributionSnapshot(user_id=123, login="alice", total_contributions=150, active_days=50)
+    cfg_narrow = UserConfig(width=600, height=400)
+    state = calculate_property_state(snap, cfg_narrow)
+    img_narrow = Image.new("RGBA", (600, 400), (30, 40, 50, 255))
+
+    svg_narrow = generate_svg(state, cfg_narrow, img_narrow)
+    root = ET.fromstring(svg_narrow)
+    assert root.attrib.get("viewBox") == "0 0 600 400"
+    assert 'transform="translate(32, 148)"' in svg_narrow
+
+    # Standard wide view
+    cfg_wide = UserConfig(width=1280, height=640)
+    img_wide = Image.new("RGBA", (1280, 640), (30, 40, 50, 255))
+    svg_wide = generate_svg(state, cfg_wide, img_wide)
+    assert f'transform="translate({1280 - 240}, 28)"' in svg_wide
