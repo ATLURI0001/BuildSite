@@ -61,6 +61,9 @@ def generate_svg(state: PropertyState, config: UserConfig, rendered_image: Image
     to_next_str = f"{micro.contributions_to_next:,}"
     percent_int = int(round(micro.progress_ratio * 100))
 
+    # Responsive HUD positioning: stack cards vertically on narrow screens (<680px)
+    hud_counter_transform = f"translate({width - 240}, 28)" if width >= 680 else "translate(32, 148)"
+
     # Accessible description
     alt_desc = (
         f"BuildSite architectural residence for {login_safe}. "
@@ -163,8 +166,8 @@ def generate_svg(state: PropertyState, config: UserConfig, rendered_image: Image
     <text x="350" y="98" text-anchor="end" class="text-badge">{percent_int}%</text>
   </g>
 
-  <!-- Top-Right Contribution Counter HUD -->
-  <g class="font-sans" transform="translate({width - 240}, 28)" filter="url(#cardShadow)">
+  <!-- Contribution Counter HUD Card (stacked below status card on viewports < 680px) -->
+  <g class="font-sans" transform="{hud_counter_transform}" filter="url(#cardShadow)">
     <rect x="0" y="0" width="208" height="68" rx="10" fill="url(#cardGrad)" stroke="#334155" stroke-width="1" stroke-opacity="0.8"/>
     <text x="18" y="24" class="text-label">Verified Contributions</text>
     <text x="18" y="50" class="text-value">{contributions_str}</text>
