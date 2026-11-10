@@ -8,10 +8,30 @@ overlays, accessible metadata, and declarative CSS keyframe animations.
 from __future__ import annotations
 
 import base64
-import html
 import io
+import re
 from pathlib import Path
 from typing import Optional
+from xml.sax.saxutils import escape as xml_escape
+
+# XML 1.0 valid character ranges exclude C0 controls (except TAB, LF, CR),
+# DEL/C1 controls (except NEL), UTF-16 surrogates, and U+FFFE/U+FFFF noncharacters.
+_XML_INVALID_CHARS_RE = re.compile(
+    r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x84\x86-\x9f\ud800-\udfff\ufdd0-\ufdef\ufffe\uffff]"
+)
+_XML_ENTITY_MAP = {"'": "&apos;", '"': "&quot;"}
+
+
+def strip_invalid_xml_chars(text: Optional[str], fallback: str = "") -> str:
+    """Remove characters forbidden by XML 1.0 and return fallback if empty."""
+    cleaned = _XML_INVALID_CHARS_RE.sub("", text or "")
+    return cleaned if cleaned else fallback
+
+
+def escape_xml_text(text: Optional[str], fallback: str = "") -> str:
+    """Strip invalid XML 1.0 control characters and escape all XML entities once."""
+    cleaned = strip_invalid_xml_chars(text, fallback=fallback)
+    return xml_escape(cleaned, entities=_XML_ENTITY_MAP)
 
 from PIL import Image
 
@@ -45,18 +65,22 @@ def generate_svg(state: PropertyState, config: UserConfig, rendered_image: Image
     Returns:
         Complete SVG XML string.
     """
-    width = config.width
-    height = config.height
+    width = max(1, int(config.width))
+    height = max(1, int(config.height))
     micro = calculate_micro_evolution(state.total_contributions)
     spec = get_milestone_spec(state.milestone)
 
     # Encode rendered photographic architectural layer
     data_uri = image_to_base64_data_uri(rendered_image, format="PNG")
 
-    # Safe HTML-escaped text
-    login_safe = html.escape(state.login or "Developer")
-    milestone_title_safe = html.escape(spec.title)
-    next_title_safe = html.escape(micro.next_upgrade_title)
+    # Strip invalid XML control chars cleanly before single-pass entity escaping
+    login_clean = strip_invalid_xml_chars(state.login, fallback="Developer")
+    milestone_clean = strip_invalid_xml_chars(spec.title)
+    next_clean = strip_invalid_xml_chars(micro.next_upgrade_title)
+
+    login_safe = escape_xml_text(login_clean)
+    milestone_title_safe = escape_xml_text(milestone_clean)
+    next_title_safe = escape_xml_text(next_clean)
     contributions_str = f"{state.total_contributions:,}"
     to_next_str = f"{micro.contributions_to_next:,}"
     percent_int = int(round(micro.progress_ratio * 100))
@@ -64,11 +88,11 @@ def generate_svg(state: PropertyState, config: UserConfig, rendered_image: Image
     # Responsive HUD positioning: stack cards vertically on narrow screens (<680px)
     hud_counter_transform = f"translate({width - 240}, 28)" if width >= 680 else "translate(32, 148)"
 
-    # Accessible description
+    # Accessible description built from unescaped text, then XML-escaped once at insertion
     alt_desc = (
-        f"BuildSite architectural residence for {login_safe}. "
-        f"Stage: {milestone_title_safe}. Verified Contributions: {contributions_str}. "
-        f"Progress to next milestone: {percent_int}%. Next upgrade: {next_title_safe}."
+        f"BuildSite architectural residence for {login_clean}. "
+        f"Stage: {milestone_clean}. Verified Contributions: {contributions_str}. "
+        f"Progress to next milestone: {percent_int}%. Next upgrade: {next_clean}."
     )
 
     # Declarative animation styles (active only when subtle animation enabled)
@@ -100,7 +124,7 @@ def generate_svg(state: PropertyState, config: UserConfig, rendered_image: Image
      role="img"
      aria-labelledby="title desc">
   <title id="title">BuildSite — {login_safe}'s Evolving Home</title>
-  <desc id="desc">{html.escape(alt_desc)}</desc>
+  <desc id="desc">{escape_xml_text(alt_desc)}</desc>
 
   <defs>
     <linearGradient id="cardGrad" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -138,7 +162,7 @@ def generate_svg(state: PropertyState, config: UserConfig, rendered_image: Image
   <image href="{data_uri}" width="{width}" height="{height}" preserveAspectRatio="xMidYMid meet" />
 
   <!-- Subtle Outer Border Frame -->
-  <rect x="1" y="1" width="{width - 2}" height="{height - 2}" rx="12" fill="none" stroke="#334155" stroke-width="1.5" stroke-opacity="0.6"/>
+  <rect x="1" y="1" width="{max(1, width - 2)}" height="{max(1, height - 2)}" rx="12" fill="none" stroke="#334155" stroke-width="1.5" stroke-opacity="0.6"/>
 
   <!-- Top-Left Architectural Status Badge HUD -->
   <g class="font-sans" transform="translate(32, 28)" filter="url(#cardShadow)">
@@ -159,7 +183,7 @@ def generate_svg(state: PropertyState, config: UserConfig, rendered_image: Image
     <!-- Progress Bar Track -->
     <rect x="20" y="78" width="330" height="6" rx="3" fill="#334155" fill-opacity="0.7"/>
     <!-- Progress Bar Fill -->
-    <rect x="20" y="78" width="{max(6, int(330 * micro.progress_ratio))}" height="6" rx="3" fill="url(#barGrad)"/>
+    <rect x="20" y="78" width="{min(330, max(6, int(330 * micro.progress_ratio)))}" height="6" rx="3" fill="url(#barGrad)"/>
 
     <!-- Next Unlock Indicator -->
     <text x="20" y="98" class="text-subtitle">Next: {next_title_safe} ({to_next_str} to unlock)</text>

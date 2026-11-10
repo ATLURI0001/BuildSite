@@ -9,7 +9,6 @@ display in GitHub READMEs.
 from __future__ import annotations
 
 import base64
-import html
 import io
 import logging
 import math
@@ -20,6 +19,7 @@ from PIL import Image, ImageDraw
 
 from buildsite.models import PropertyState, UserConfig
 from buildsite.progression import calculate_micro_evolution, get_milestone_spec
+from buildsite.svg_export import escape_xml_text
 
 logger = logging.getLogger(__name__)
 
@@ -283,8 +283,8 @@ def generate_animated_turntable(
 
     # 2. Build Multi-Frame Animated SVG with CSS keyframes
     spec = get_milestone_spec(state.milestone)
-    login_safe = html.escape(state.login or "Developer")
-    milestone_title_safe = html.escape(spec.title)
+    login_safe = escape_xml_text(state.login, fallback="Developer")
+    milestone_title_safe = escape_xml_text(spec.title)
     contributions_str = f"{state.total_contributions:,}"
 
     # Encode frames

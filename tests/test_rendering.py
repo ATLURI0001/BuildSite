@@ -9,7 +9,13 @@ from PIL import Image
 from buildsite.composer import composite_property, find_assets_directory
 from buildsite.models import ContributionSnapshot, PropertyState, UserConfig
 from buildsite.progression import calculate_property_state
-from buildsite.svg_export import export_png_fallback, export_svg_to_file, generate_svg
+from buildsite.svg_export import (
+    escape_xml_text,
+    export_png_fallback,
+    export_svg_to_file,
+    generate_svg,
+    strip_invalid_xml_chars,
+)
 
 
 def test_composite_property_layers():
@@ -134,3 +140,54 @@ def test_responsive_hud_layout_on_narrow_viewports():
     img_wide = Image.new("RGBA", (1280, 640), (30, 40, 50, 255))
     svg_wide = generate_svg(state, cfg_wide, img_wide)
     assert f'transform="translate({1280 - 240}, 28)"' in svg_wide
+
+
+def test_svg_xml_entity_escaping_no_double_escaping_or_injection():
+    """Verify XML special characters are escaped cleanly in a single pass across all text nodes."""
+    malicious_login = 'O\'Neil & "Dev"</text><script>alert(1)</script>'
+    snap = ContributionSnapshot(user_id=77, login=malicious_login, total_contributions=250, active_days=60)
+    cfg = UserConfig()
+    state = calculate_property_state(snap, cfg)
+    img = Image.new("RGBA", (1280, 640), (30, 40, 50, 255))
+
+    svg_str = generate_svg(state, cfg, img)
+
+    # Injection tags must remain escaped text, not raw elements
+    assert "<script>" not in svg_str
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in svg_str
+    # Must never double-escape in <desc>
+    assert "&amp;amp;" not in svg_str
+    assert "&amp;lt;" not in svg_str
+    assert "&amp;apos;" not in svg_str
+    assert "&amp;#x27;" not in svg_str
+
+    root = ET.fromstring(svg_str)
+    ns = {"svg": "http://www.w3.org/2000/svg"}
+    title_el = root.find("svg:title", ns)
+    desc_el = root.find("svg:desc", ns)
+    assert title_el is not None and title_el.text is not None
+    assert desc_el is not None and desc_el.text is not None
+    assert malicious_login in title_el.text
+    assert malicious_login in desc_el.text
+
+
+def test_svg_strips_xml_forbidden_control_characters():
+    """Verify illegal XML 1.0 control characters are stripped so ET parsing never crashes."""
+    assert strip_invalid_xml_chars("\x00\x07\x1f", fallback="Developer") == "Developer"
+    assert escape_xml_text("a\x00&\x0b'b\"c<d>e") == "a&amp;&apos;b&quot;c&lt;d&gt;e"
+
+    cfg = UserConfig()
+    for raw_login, expected in [
+        ("ali\x00ce\x07", "alice"),
+        ("\x00\x08\x0c\x1f\x7f", "Developer"),
+    ]:
+        snap = ContributionSnapshot(user_id=88, login=raw_login, total_contributions=120, active_days=30)
+        state = calculate_property_state(snap, cfg)
+        img = Image.new("RGBA", (1280, 640), (30, 40, 50, 255))
+
+        svg_str = generate_svg(state, cfg, img)
+        root = ET.fromstring(svg_str)
+        ns = {"svg": "http://www.w3.org/2000/svg"}
+        title_el = root.find("svg:title", ns)
+        assert title_el is not None and title_el.text is not None
+        assert expected in title_el.text
