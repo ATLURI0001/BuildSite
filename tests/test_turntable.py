@@ -145,3 +145,22 @@ def test_generate_animated_turntable_invalid_frames(tmp_path: Path):
         generate_animated_turntable(
             state, config, tmp_path / "out.webp", tmp_path / "out.svg", num_frames=0
         )
+
+
+def test_generate_animated_turntable_xml_escaping_and_control_chars(tmp_path: Path):
+    """Verify 360 turntable SVG safely escapes entities and strips invalid XML control chars."""
+    raw_login = 'A&B\x00<img src="x">'
+    state = PropertyState(login=raw_login, total_contributions=500, milestone=5)
+    config = UserConfig(username="tester")
+
+    webp_path = tmp_path / "safe.webp"
+    svg_path = tmp_path / "safe.svg"
+    generate_animated_turntable(state, config, webp_path, svg_path, num_frames=1)
+
+    svg_content = svg_path.read_text(encoding="utf-8")
+    assert "<img " not in svg_content
+    root = ET.fromstring(svg_content)
+    ns = {"svg": "http://www.w3.org/2000/svg"}
+    title_el = root.find("svg:title", ns)
+    assert title_el is not None and title_el.text is not None
+    assert 'A&B<img src="x">' in title_el.text
