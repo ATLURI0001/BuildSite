@@ -7,6 +7,8 @@ guarantees and security hardening against path traversal or injection.
 from __future__ import annotations
 
 import os
+import posixpath
+import re
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -24,20 +26,65 @@ VALID_FORMATS = {"svg", "png"}
 VALID_ANIMATION_MODES = {"subtle", "none"}
 VALID_VISIBILITIES = {"public", "private"}
 VALID_STYLES = {"auto", "modern", "minimal", "timber", "slate", "coastal"}
+_DRIVE_LETTER_RE = re.compile(r"^[A-Za-z]:")
+_HEX_COLOR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
+
+
+def validate_hex_color(color: Any, fallback: str = "#000000") -> str:
+    """Validate and normalize a CSS hex color string, returning fallback if unsafe."""
+    if not isinstance(color, str):
+        return fallback
+    cleaned = color.strip()
+    if _HEX_COLOR_RE.match(cleaned):
+        return cleaned.upper()
+    return fallback
+
+
+def _parse_bounded_int(value: Any, default: int, min_val: int, max_val: int, field_name: str) -> int:
+    """Parse an integer config value strictly, rejecting booleans and malformed strings."""
+    if value is None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise ConfigValidationError(f"Invalid integer value for '{field_name}': {value!r}")
+    if isinstance(value, float):
+        if value != int(value):
+            raise ConfigValidationError(f"Non-integer value for '{field_name}': {value!r}")
+        parsed = int(value)
+    elif isinstance(value, str):
+        try:
+            parsed = int(value.strip())
+        except ValueError as exc:
+            raise ConfigValidationError(f"Invalid integer value for '{field_name}': {value!r}") from exc
+    else:
+        parsed = int(value)
+    return max(min_val, min(max_val, parsed))
 
 
 def sanitize_output_dir(path_str: str) -> str:
     """Sanitize and validate output directory to prevent path traversal."""
+    if not isinstance(path_str, str):
+        raise ConfigValidationError("Output directory path must be a string.")
+    if "\x00" in path_str:
+        raise ConfigValidationError("Output directory path contains null bytes.")
     cleaned = path_str.strip()
     if not cleaned:
         return "assets/buildsite"
-    # Disallow absolute paths outside project or traversal '../'
-    normalized = os.path.normpath(cleaned)
-    if os.path.isabs(normalized) or normalized.startswith(".."):
+    # Normalize slashes across Windows/POSIX before checking traversal or drive roots
+    posix_path = cleaned.replace("\\", "/")
+    if (
+        posix_path.startswith("/")
+        or _DRIVE_LETTER_RE.match(posix_path)
+        or os.path.isabs(cleaned)
+    ):
         raise ConfigValidationError(
             f"Unsafe output directory path '{path_str}'. Path must be relative and within the repository."
         )
-    return normalized.replace("\\", "/")
+    normalized = posixpath.normpath(posix_path)
+    if normalized == ".." or normalized.startswith("../") or "/../" in f"/{normalized}/":
+        raise ConfigValidationError(
+            f"Unsafe output directory path '{path_str}'. Path must not escape repository root."
+        )
+    return "assets/buildsite" if normalized == "." else normalized
 
 
 def load_config(config_path: Optional[str] = None) -> UserConfig:
@@ -96,8 +143,8 @@ def load_config(config_path: Optional[str] = None) -> UserConfig:
     # Extract render section
     render_sec = raw_data.get("render", {})
     if isinstance(render_sec, dict):
-        cfg.width = max(400, min(2560, int(render_sec.get("width", 1280))))
-        cfg.height = max(200, min(1440, int(render_sec.get("height", 640))))
+        cfg.width = _parse_bounded_int(render_sec.get("width"), 1280, 400, 2560, "render.width")
+        cfg.height = _parse_bounded_int(render_sec.get("height"), 640, 200, 1440, "render.height")
         fmt = str(render_sec.get("format", "svg")).lower()
         if fmt in VALID_FORMATS:
             cfg.format = fmt
