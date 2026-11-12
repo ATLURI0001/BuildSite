@@ -24,10 +24,28 @@ class StateError(Exception):
     """Raised when loading or writing state fails."""
 
 
+def _safe_int(value: Any, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    if isinstance(value, bool):
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def load_state(state_file_path: Path) -> Optional[PropertyState]:
     """Load and migrate existing PropertyState from disk.
 
-    Returns None if file does not exist.
+    Returns None if file does not exist or cannot be parsed as a JSON object.
     """
     if not state_file_path.is_file():
         return None
@@ -36,11 +54,15 @@ def load_state(state_file_path: Path) -> Optional[PropertyState]:
         with open(state_file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
     except Exception as exc:
-        logger.warning("Could not read existing state file %s: %exc", state_file_path, exc)
+        logger.warning("Could not read existing state file %s: %s", state_file_path, exc)
+        return None
+
+    if not isinstance(data, dict):
+        logger.warning("Expected JSON object in state file %s, got %s", state_file_path, type(data).__name__)
         return None
 
     # Handle schema migration if needed
-    schema_ver = data.get("schema_version", 1)
+    schema_ver = _safe_int(data.get("schema_version", 1), 1)
     if schema_ver > CURRENT_SCHEMA_VERSION:
         logger.warning(
             "State file has newer schema version %d than supported %d",
@@ -54,21 +76,24 @@ def load_state(state_file_path: Path) -> Optional[PropertyState]:
     except ValueError:
         milestone = ConstructionMilestone.PLOT
 
+    raw_layers = data.get("active_layers", [])
+    raw_unlocked = data.get("unlocked_features", [])
+
     return PropertyState(
         schema_version=CURRENT_SCHEMA_VERSION,
-        user_id=int(data.get("user_id", 0)),
-        login=str(data.get("login", "")),
-        seed=str(data.get("seed", "")),
-        total_contributions=int(data.get("total_contributions", 0)),
-        active_days=int(data.get("active_days", 0)),
+        user_id=_safe_int(data.get("user_id", 0)),
+        login=str(data.get("login", "") or ""),
+        seed=str(data.get("seed", "") or ""),
+        total_contributions=_safe_int(data.get("total_contributions", 0)),
+        active_days=_safe_int(data.get("active_days", 0)),
         milestone=milestone,
-        progress_ratio=float(data.get("progress_ratio", 0.0)),
-        active_layers=list(data.get("active_layers", [])),
-        unlocked_features=list(data.get("unlocked_features", [])),
+        progress_ratio=_safe_float(data.get("progress_ratio", 0.0)),
+        active_layers=list(raw_layers) if isinstance(raw_layers, list) else [],
+        unlocked_features=list(raw_unlocked) if isinstance(raw_unlocked, list) else [],
         variation=data.get("variation"),
-        last_updated=str(data.get("last_updated", "")),
-        last_contribution_count=int(data.get("last_contribution_count", 0)),
-        hash_signature=str(data.get("hash_signature", ""))
+        last_updated=str(data.get("last_updated", "") or ""),
+        last_contribution_count=_safe_int(data.get("last_contribution_count", 0)),
+        hash_signature=str(data.get("hash_signature", "") or "")
     )
 
 
