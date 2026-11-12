@@ -72,3 +72,14 @@ def test_load_nonexistent_state(tmp_path: Path):
     """Loading nonexistent state returns None without error."""
     missing = tmp_path / "does_not_exist.json"
     assert load_state(missing) is None
+
+
+def test_load_corrupt_and_non_dict_state_returns_none(tmp_path: Path):
+    """Corrupt JSON or non-object JSON returns None cleanly without logging TypeError."""
+    corrupt = tmp_path / "corrupt.json"
+    corrupt.write_text("{not valid json", encoding="utf-8")
+    assert load_state(corrupt) is None
+
+    non_dict = tmp_path / "list_state.json"
+    non_dict.write_text('["unexpected", "list"]', encoding="utf-8")
+    assert load_state(non_dict) is None
