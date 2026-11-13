@@ -126,3 +126,24 @@ def test_deterministic_idempotence():
     assert s1.hash_signature == s2.hash_signature
     assert s1.milestone == s2.milestone
     assert s1.active_layers == s2.active_layers
+
+
+def test_progression_handles_none_and_malformed_inputs():
+    """Verify progression calculations safely handle None, floats, strings, and default configs."""
+    assert calculate_milestone(None).milestone == ConstructionMilestone.PLOT
+    assert calculate_milestone("invalid").milestone == ConstructionMilestone.PLOT
+    assert calculate_micro_evolution(None).current_milestone == ConstructionMilestone.PLOT
+    assert calculate_micro_evolution("bad").current_milestone == ConstructionMilestone.PLOT
+
+    # None config in determine_active_layers defaults to all layers
+    layers = determine_active_layers(ConstructionMilestone.SWIMMING_POOL, None)
+    assert "swimming_pool" in layers
+
+    # None snapshot raises ValueError
+    with pytest.raises(ValueError, match="snapshot must not be None"):
+        calculate_property_state(None)
+
+    # None config in calculate_property_state creates default UserConfig
+    snap = ContributionSnapshot(user_id=1, login="test", total_contributions=10, active_days=5)
+    state = calculate_property_state(snap, None)
+    assert state.milestone == ConstructionMilestone.FOUNDATIONS
