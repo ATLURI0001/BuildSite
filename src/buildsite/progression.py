@@ -33,7 +33,10 @@ def get_milestone_spec(milestone: ConstructionMilestone) -> MilestoneSpec:
 
 def calculate_milestone(contributions: int) -> MilestoneSpec:
     """Determine the major milestone for a given contribution count."""
-    safe_contributions = max(0, contributions)
+    try:
+        safe_contributions = max(0, int(contributions or 0))
+    except (TypeError, ValueError):
+        safe_contributions = 0
     for spec in MILESTONE_SPECS:
         if spec.min_contributions <= safe_contributions <= spec.max_contributions:
             return spec
@@ -43,6 +46,10 @@ def calculate_milestone(contributions: int) -> MilestoneSpec:
 
 def get_micro_details(milestone: ConstructionMilestone, contributions: int) -> List[str]:
     """Return fine-grained architectural details unlocked within the milestone."""
+    try:
+        contributions = max(0, int(contributions or 0))
+    except (TypeError, ValueError):
+        contributions = 0
     details: List[str] = []
 
     if milestone == ConstructionMilestone.PLOT:
@@ -153,7 +160,10 @@ def get_micro_details(milestone: ConstructionMilestone, contributions: int) -> L
 
 def calculate_micro_evolution(contributions: int) -> MicroEvolution:
     """Calculate the micro-progression within the active milestone."""
-    safe_c = max(0, contributions)
+    try:
+        safe_c = max(0, int(contributions or 0))
+    except (TypeError, ValueError):
+        safe_c = 0
     spec = calculate_milestone(safe_c)
 
     spec_index = MILESTONE_SPECS.index(spec)
@@ -198,8 +208,10 @@ def calculate_micro_evolution(contributions: int) -> MicroEvolution:
     )
 
 
-def determine_active_layers(milestone: ConstructionMilestone, config: UserConfig) -> List[str]:
+def determine_active_layers(milestone: ConstructionMilestone, config: Optional[UserConfig] = None) -> List[str]:
     """Determine the ordered rendering layers needed for this milestone and config."""
+    if config is None:
+        config = UserConfig()
     spec = get_milestone_spec(milestone)
     layers = list(spec.layers)
 
@@ -216,7 +228,7 @@ def determine_active_layers(milestone: ConstructionMilestone, config: UserConfig
 
 def calculate_property_state(
     snapshot: ContributionSnapshot,
-    config: UserConfig,
+    config: Optional[UserConfig] = None,
     previous_state: Optional[PropertyState] = None
 ) -> PropertyState:
     """Evolve property state from contribution snapshot and user config.
@@ -226,7 +238,15 @@ def calculate_property_state(
     - Non-regression: Previous unlocks are preserved if preserve_unlocks is True
     - Idempotence: Duplicate runs yield identical state and signature
     """
-    total_c = snapshot.total_contributions
+    if snapshot is None:
+        raise ValueError("snapshot must not be None")
+    if config is None:
+        config = UserConfig()
+
+    try:
+        total_c = max(0, int(snapshot.total_contributions or 0))
+    except (TypeError, ValueError):
+        total_c = 0
 
     # Preserve previous achievements if total contributions temporarily reduced
     if previous_state and config.preserve_unlocks:
