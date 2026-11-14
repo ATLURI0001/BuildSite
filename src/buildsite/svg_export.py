@@ -39,8 +39,10 @@ from buildsite.models import PropertyState, UserConfig
 from buildsite.progression import calculate_micro_evolution, get_milestone_spec
 
 
-def image_to_base64_data_uri(image: Image.Image, format: str = "PNG") -> str:
+def image_to_base64_data_uri(image: Optional[Image.Image], format: str = "PNG") -> str:
     """Encode Pillow image into base64 data URI."""
+    if image is None:
+        image = Image.new("RGBA", (1280, 640), (20, 24, 30, 255))
     buf = io.BytesIO()
     # JPEG optimization for background photography if opaque, PNG for alpha
     if format.upper() == "JPEG":
@@ -54,7 +56,7 @@ def image_to_base64_data_uri(image: Image.Image, format: str = "PNG") -> str:
     return f"data:{mime};base64,{b64_str}"
 
 
-def generate_svg(state: PropertyState, config: UserConfig, rendered_image: Image.Image) -> str:
+def generate_svg(state: PropertyState, config: UserConfig, rendered_image: Optional[Image.Image] = None) -> str:
     """Generate self-contained standards-compliant SVG document.
 
     Args:
@@ -67,6 +69,8 @@ def generate_svg(state: PropertyState, config: UserConfig, rendered_image: Image
     """
     width = max(1, int(config.width))
     height = max(1, int(config.height))
+    if rendered_image is None:
+        rendered_image = Image.new("RGBA", (width, height), (20, 24, 30, 255))
     micro = calculate_micro_evolution(state.total_contributions)
     spec = get_milestone_spec(state.milestone)
 

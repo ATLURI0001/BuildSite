@@ -98,15 +98,16 @@ def derive_property_variation(seed: str, preferred_style: str = "auto") -> Prope
     Returns:
         PropertyVariation with deterministic styling attributes.
     """
+    clean_seed = str(seed or "default_buildsite_seed")
     # Deterministic integer from SHA-256
-    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(clean_seed.encode("utf-8")).hexdigest()
     int_seed = int(digest[:12], 16)
 
     # Match user style preference or select deterministically
     matched_style: StyleDefinition
-    if preferred_style and preferred_style != "auto":
-        pref = preferred_style.lower()
-        candidates = [s for s in STYLES if pref in s.name or pref in s.display_title.lower()]
+    pref = str(preferred_style or "auto").strip().lower()
+    if pref and pref != "auto":
+        candidates = [s for s in STYLES if pref in s.name.lower() or pref in s.display_title.lower()]
         if candidates:
             matched_style = candidates[0]
         else:
@@ -122,7 +123,7 @@ def derive_property_variation(seed: str, preferred_style: str = "auto") -> Prope
     final_kelvin = max(2500, min(4200, matched_style.lighting_temp_kelvin + temp_jitter))
 
     return PropertyVariation(
-        seed=seed,
+        seed=clean_seed,
         style_name=matched_style.name,
         primary_tint=matched_style.primary_tint,
         accent_material=matched_style.accent_material,
@@ -135,7 +136,11 @@ def derive_property_variation(seed: str, preferred_style: str = "auto") -> Prope
 
 def get_style_palette_by_name(style_name: str) -> StyleDefinition:
     """Return the StyleDefinition matching style_name, or default to modern_minimal."""
+    clean_name = str(style_name or "").strip().lower()
     for style in STYLES:
-        if style.name == style_name:
+        if style.name.lower() == clean_name:
+            return style
+    for style in STYLES:
+        if clean_name and (clean_name in style.name.lower() or clean_name in style.display_title.lower()):
             return style
     return STYLES[0]
