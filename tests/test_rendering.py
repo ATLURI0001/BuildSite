@@ -14,8 +14,10 @@ from buildsite.svg_export import (
     export_png_fallback,
     export_svg_to_file,
     generate_svg,
+    image_to_base64_data_uri,
     strip_invalid_xml_chars,
 )
+from buildsite.property import derive_property_variation, get_style_palette_by_name
 
 
 def test_composite_property_layers():
@@ -191,3 +193,29 @@ def test_svg_strips_xml_forbidden_control_characters():
         title_el = root.find("svg:title", ns)
         assert title_el is not None and title_el.text is not None
         assert expected in title_el.text
+
+
+def test_svg_and_uri_handle_none_rendered_image():
+    """Verify fallback canvas is constructed if image is None."""
+    uri = image_to_base64_data_uri(None)
+    assert uri.startswith("data:image/png;base64,")
+
+    snap = ContributionSnapshot(user_id=1, login="solo", total_contributions=50, active_days=10)
+    cfg = UserConfig()
+    state = calculate_property_state(snap, cfg)
+    svg_str = generate_svg(state, cfg, rendered_image=None)
+    root = ET.fromstring(svg_str)
+    assert root.attrib.get("viewBox") == "0 0 1280 640"
+
+
+def test_property_variation_derivation_guards():
+    """Verify derive_property_variation and get_style_palette_by_name guard None and malformed styles."""
+    var = derive_property_variation(None, preferred_style=None)
+    assert var.seed == "default_buildsite_seed"
+    assert var.style_name in {"modern_minimal", "warm_timber", "slate_stone", "coastal_white"}
+
+    style = get_style_palette_by_name(None)
+    assert style.name == "modern_minimal"
+
+    style_sub = get_style_palette_by_name("  TIMBER  ")
+    assert style_sub.name == "warm_timber"
