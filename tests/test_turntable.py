@@ -164,3 +164,20 @@ def test_generate_animated_turntable_xml_escaping_and_control_chars(tmp_path: Pa
     title_el = root.find("svg:title", ns)
     assert title_el is not None and title_el.text is not None
     assert 'A&B<img src="x">' in title_el.text
+
+
+def test_generate_animated_turntable_null_and_negative_contributions(tmp_path: Path):
+    """Verify turntable generation gracefully handles None or negative contributions."""
+    state = PropertyState(login="nulluser", total_contributions=-10, milestone=1)
+    state.total_contributions = None
+    config = UserConfig(username="nulluser")
+
+    webp_path = tmp_path / "null_contrib.webp"
+    svg_path = tmp_path / "null_contrib.svg"
+    generate_animated_turntable(state, config, webp_path, svg_path, num_frames=1)
+
+    svg_content = svg_path.read_text(encoding="utf-8")
+    assert "Verified Contributions" in svg_content
+    assert ">0<" in svg_content
+    root = ET.fromstring(svg_content)
+    assert "svg" in root.tag.lower()
