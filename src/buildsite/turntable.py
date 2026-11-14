@@ -282,10 +282,11 @@ def generate_animated_turntable(
     logger.info("Saved Animated 360 Turntable WebP: %s (%d KB)", output_webp, output_webp.stat().st_size // 1024)
 
     # 2. Build Multi-Frame Animated SVG with CSS keyframes
-    spec = get_milestone_spec(state.milestone)
-    login_safe = escape_xml_text(state.login, fallback="Developer")
-    milestone_title_safe = escape_xml_text(spec.title)
-    contributions_str = f"{state.total_contributions:,}"
+    spec = get_milestone_spec(state.milestone) if state else None
+    login_safe = escape_xml_text(state.login if state else None, fallback="Developer")
+    milestone_title_safe = escape_xml_text(spec.title if spec else "Estate Residence")
+    total_contribs = max(0, int(state.total_contributions)) if state and state.total_contributions is not None else 0
+    contributions_str = f"{total_contribs:,}"
 
     # Encode frames
     b64_frames = []
