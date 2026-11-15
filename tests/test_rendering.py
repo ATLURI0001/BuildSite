@@ -219,3 +219,17 @@ def test_property_variation_derivation_guards():
 
     style_sub = get_style_palette_by_name("  TIMBER  ")
     assert style_sub.name == "warm_timber"
+
+
+def test_svg_null_and_negative_contributions_guards():
+    """Verify generate_svg handles None, negative, or missing contributions safely."""
+    cfg = UserConfig()
+    snap = ContributionSnapshot(user_id=1, login="null_tester", total_contributions=0, active_days=0)
+    state = calculate_property_state(snap, cfg)
+    state.total_contributions = None  # type: ignore[assignment]
+    state.milestone = None  # type: ignore[assignment]
+
+    svg_str = generate_svg(state, cfg, rendered_image=None)
+    root = ET.fromstring(svg_str)
+    assert root.tag.endswith("svg")
+    assert "0" in svg_str

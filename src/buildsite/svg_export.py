@@ -71,23 +71,27 @@ def generate_svg(state: PropertyState, config: UserConfig, rendered_image: Optio
     height = max(1, int(config.height))
     if rendered_image is None:
         rendered_image = Image.new("RGBA", (width, height), (20, 24, 30, 255))
-    micro = calculate_micro_evolution(state.total_contributions)
-    spec = get_milestone_spec(state.milestone)
+    total_contribs = max(0, int(getattr(state, "total_contributions", 0) or 0))
+    micro = calculate_micro_evolution(total_contribs)
+    milestone_val = getattr(state, "milestone", 0) or 0
+    spec = get_milestone_spec(milestone_val)
 
     # Encode rendered photographic architectural layer
     data_uri = image_to_base64_data_uri(rendered_image, format="PNG")
 
     # Strip invalid XML control chars cleanly before single-pass entity escaping
-    login_clean = strip_invalid_xml_chars(state.login, fallback="Developer")
-    milestone_clean = strip_invalid_xml_chars(spec.title)
-    next_clean = strip_invalid_xml_chars(micro.next_upgrade_title)
+    login_clean = strip_invalid_xml_chars(getattr(state, "login", "") or "", fallback="Developer")
+    milestone_clean = strip_invalid_xml_chars(getattr(spec, "title", "Foundation"))
+    next_clean = strip_invalid_xml_chars(getattr(micro, "next_upgrade_title", "Final Stage"))
 
     login_safe = escape_xml_text(login_clean)
     milestone_title_safe = escape_xml_text(milestone_clean)
     next_title_safe = escape_xml_text(next_clean)
-    contributions_str = f"{state.total_contributions:,}"
-    to_next_str = f"{micro.contributions_to_next:,}"
-    percent_int = int(round(micro.progress_ratio * 100))
+    contributions_str = f"{total_contribs:,}"
+    to_next_val = max(0, int(getattr(micro, "contributions_to_next", 0) or 0))
+    to_next_str = f"{to_next_val:,}"
+    ratio_val = max(0.0, min(1.0, float(getattr(micro, "progress_ratio", 0.0) or 0.0)))
+    percent_int = int(round(ratio_val * 100))
 
     # Responsive HUD positioning: stack cards vertically on narrow screens (<680px)
     hud_counter_transform = f"translate({width - 240}, 28)" if width >= 680 else "translate(32, 148)"
