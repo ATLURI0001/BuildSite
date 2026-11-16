@@ -27,12 +27,60 @@ class GitHubAPIError(Exception):
     """Raised when GitHub API requests fail."""
 
 
+class InvalidUsernameError(GitHubAPIError):
+    """Raised when the specified GitHub username fails validation or contains unsafe characters."""
+
+
 class RateLimitExceededError(GitHubAPIError):
     """Raised when GitHub API rate limit is exceeded."""
 
 
 class UserNotFoundError(GitHubAPIError):
     """Raised when the specified GitHub user does not exist."""
+
+
+def validate_github_username(username: Any) -> str:
+    """Validate and sanitize a GitHub login handle against naming and security constraints.
+
+    Enforces 1-39 character length, alphanumeric characters with hyphens/underscores,
+    and prohibits path traversal, slashes, whitespace, and leading/trailing punctuation.
+
+    Args:
+        username: Input login identifier.
+
+    Returns:
+        Stripped valid username string.
+
+    Raises:
+        InvalidUsernameError: If the username fails validation.
+    """
+    if not isinstance(username, str):
+        raise InvalidUsernameError(f"GitHub username must be a string, got {type(username).__name__}")
+    user = username.strip()
+    if not user:
+        raise InvalidUsernameError("GitHub username cannot be empty")
+    if len(user) > 39:
+        raise InvalidUsernameError(f"GitHub username exceeds maximum 39 characters: '{user}' ({len(user)} chars)")
+
+    # Enforce safe naming pattern: alphanumeric leading char, alphanumeric/hyphen/underscore body
+    if not re.fullmatch(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,38}$", user):
+        raise InvalidUsernameError(
+            f"Invalid GitHub username '{user}'. Must start with alphanumeric and contain only alphanumeric, hyphens, or underscores without slashes or path traversal."
+        )
+
+    # Disallow consecutive hyphens or double dots
+    if ".." in user or "--" in user:
+        raise InvalidUsernameError(f"Invalid GitHub username '{user}': cannot contain consecutive hyphens or dots.")
+
+    return user
+
+
+def sanitize_auth_token(token: Optional[str]) -> Optional[str]:
+    """Sanitize authentication token to eliminate header injection and control characters."""
+    if not token or not isinstance(token, str):
+        return None
+    cleaned = "".join(ch for ch in token.strip() if 32 <= ord(ch) <= 126 and ch not in ("\r", "\n"))
+    return cleaned if cleaned else None
 
 
 GRAPHQL_CONTRIBUTIONS_QUERY = """
@@ -70,7 +118,7 @@ def get_default_headers(token: Optional[str] = None) -> Dict[str, str]:
         "User-Agent": "BuildSite-Engine/1.0 (+https://github.com/buildsite/buildsite)",
         "Accept": "application/vnd.github.v3+json",
     }
-    actual_token = token or os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    actual_token = sanitize_auth_token(token or os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"))
     if actual_token:
         headers["Authorization"] = f"bearer {actual_token}"
     return headers
@@ -95,10 +143,11 @@ def fetch_contributions_graphql(
     Returns:
         ContributionSnapshot with normalized metrics.
     """
+    clean_username = validate_github_username(username)
     headers = get_default_headers(token)
     req_session = session or requests.Session()
 
-    variables: Dict[str, Any] = {"login": username}
+    variables: Dict[str, Any] = {"login": clean_username}
     if from_date:
         variables["from"] = from_date
     if to_date:
@@ -175,8 +224,9 @@ def fetch_contributions_public_calendar(
 
     Works without authentication tokens and accurately parses the full calendar year.
     """
+    clean_username = validate_github_username(username)
     req_session = session or requests.Session()
-    calendar_url = f"https://github.com/users/{username}/contributions"
+    calendar_url = f"https://github.com/users/{clean_username}/contributions"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
     try:
@@ -185,7 +235,7 @@ def fetch_contributions_public_calendar(
         raise GitHubAPIError(f"Network error querying public contribution calendar: {exc}") from exc
 
     if resp.status_code == 404:
-        raise UserNotFoundError(f"GitHub user '{username}' was not found.")
+        raise UserNotFoundError(f"GitHub user '{clean_username}' was not found.")
     if not resp.ok:
         raise GitHubAPIError(f"GitHub contributions page returned HTTP {resp.status_code}")
 
@@ -216,7 +266,7 @@ def fetch_contributions_public_calendar(
 
     user_id = 0
     try:
-        u_resp = req_session.get(f"{GITHUB_REST_ENDPOINT}/users/{username}", headers=get_default_headers(), timeout=5.0)
+        u_resp = req_session.get(f"{GITHUB_REST_ENDPOINT}/users/{clean_username}", headers=get_default_headers(), timeout=5.0)
         if u_resp.ok:
             user_id = u_resp.json().get("id", 0)
     except Exception:
@@ -224,11 +274,11 @@ def fetch_contributions_public_calendar(
 
     if user_id == 0:
         import hashlib
-        user_id = int(hashlib.md5(username.encode()).hexdigest()[:8], 16)
+        user_id = int(hashlib.md5(clean_username.encode()).hexdigest()[:8], 16)
 
     return ContributionSnapshot(
         user_id=user_id,
-        login=username,
+        login=clean_username,
         total_contributions=total_count,
         active_days=active_days,
         calendar_days=contribution_days,
@@ -247,17 +297,18 @@ def fetch_contributions_rest_fallback(
 
     Used when GraphQL access is restricted (e.g. unauthenticated public access).
     """
+    clean_username = validate_github_username(username)
     headers = get_default_headers(token)
     req_session = session or requests.Session()
 
-    user_url = f"{GITHUB_REST_ENDPOINT}/users/{username}"
+    user_url = f"{GITHUB_REST_ENDPOINT}/users/{clean_username}"
     try:
         user_resp = req_session.get(user_url, headers=headers, timeout=10.0)
     except requests.RequestException as exc:
         raise GitHubAPIError(f"Network error querying GitHub REST API: {exc}") from exc
 
     if user_resp.status_code == 404:
-        raise UserNotFoundError(f"GitHub user '{username}' was not found.")
+        raise UserNotFoundError(f"GitHub user '{clean_username}' was not found.")
     if user_resp.status_code == 403 and "rate limit" in user_resp.text.lower():
         raise RateLimitExceededError("GitHub REST API rate limit exceeded.")
     if not user_resp.ok:
@@ -265,11 +316,11 @@ def fetch_contributions_rest_fallback(
 
     user_info = user_resp.json()
     user_id = user_info.get("id", 0)
-    login = user_info.get("login", username)
+    login = user_info.get("login", clean_username)
     public_repos = user_info.get("public_repos", 0)
 
     # Estimate base contributions from public metrics or public events
-    events_url = f"{GITHUB_REST_ENDPOINT}/users/{username}/events/public?per_page=100"
+    events_url = f"{GITHUB_REST_ENDPOINT}/users/{clean_username}/events/public?per_page=100"
     event_count = 0
     try:
         events_resp = req_session.get(events_url, headers=headers, timeout=10.0)
@@ -295,9 +346,10 @@ def fetch_contributions_rest_fallback(
 
 def get_demo_contributions(count: int = 327, username: str = "demo-developer") -> ContributionSnapshot:
     """Generate deterministic, clearly labeled demo contributions snapshot for testing."""
+    clean_username = validate_github_username(username)
     return ContributionSnapshot(
         user_id=12345678,
-        login=username,
+        login=clean_username,
         total_contributions=max(0, count),
         active_days=min(count, 185),
         calendar_days=[
