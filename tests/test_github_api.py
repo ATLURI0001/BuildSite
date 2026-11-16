@@ -7,11 +7,15 @@ import requests
 
 from buildsite.github_api import (
     GitHubAPIError,
+    InvalidUsernameError,
     RateLimitExceededError,
     UserNotFoundError,
     fetch_contributions_graphql,
     fetch_contributions_rest_fallback,
+    get_default_headers,
     get_demo_contributions,
+    sanitize_auth_token,
+    validate_github_username,
 )
 
 
@@ -119,3 +123,61 @@ def test_fetch_contributions_rest_fallback(mock_get):
     assert snapshot.user_id == 9876
     assert snapshot.total_contributions >= 50
     assert snapshot.source == "rest"
+
+
+def test_validate_github_username():
+    # Valid handles
+    assert validate_github_username("mona") == "mona"
+    assert validate_github_username("  octocat  ") == "octocat"
+    assert validate_github_username("test-user-123") == "test-user-123"
+    assert validate_github_username("backup_user") == "backup_user"
+    assert validate_github_username("a" * 39) == "a" * 39
+
+    # Empty and non-string inputs
+    with pytest.raises(InvalidUsernameError):
+        validate_github_username("")
+    with pytest.raises(InvalidUsernameError):
+        validate_github_username("   ")
+    with pytest.raises(InvalidUsernameError):
+        validate_github_username(None)
+    with pytest.raises(InvalidUsernameError):
+        validate_github_username(12345)
+
+    # Exceeding 39 characters
+    with pytest.raises(InvalidUsernameError):
+        validate_github_username("a" * 40)
+
+    # Path traversal and injection attempts
+    with pytest.raises(InvalidUsernameError):
+        validate_github_username("../../etc/passwd")
+    with pytest.raises(InvalidUsernameError):
+        validate_github_username("user/repo")
+    with pytest.raises(InvalidUsernameError):
+        validate_github_username("user\\repo")
+    with pytest.raises(InvalidUsernameError):
+        validate_github_username("user\nnewline")
+    with pytest.raises(InvalidUsernameError):
+        validate_github_username("-leading-hyphen")
+    with pytest.raises(InvalidUsernameError):
+        validate_github_username("user--consecutive")
+    with pytest.raises(InvalidUsernameError):
+        validate_github_username("user..dots")
+
+
+def test_sanitize_auth_token_and_headers():
+    # Token sanitization
+    assert sanitize_auth_token(None) is None
+    assert sanitize_auth_token("") is None
+    assert sanitize_auth_token("ghp_validToken123") == "ghp_validToken123"
+
+    # CRLF header injection neutralization
+    tainted = "ghp_token123\r\nInjected-Header: evil\r\n"
+    cleaned = sanitize_auth_token(tainted)
+    assert "\r" not in cleaned
+    assert "\n" not in cleaned
+    assert cleaned == "ghp_token123Injected-Header: evil"
+
+    # Header generation
+    headers = get_default_headers("ghp_safe_token")
+    assert headers["Authorization"] == "bearer ghp_safe_token"
+
