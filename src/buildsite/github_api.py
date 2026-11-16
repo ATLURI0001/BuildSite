@@ -11,7 +11,8 @@ import logging
 import os
 import re
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+import collections.abc
 
 import requests
 
@@ -83,6 +84,91 @@ def sanitize_auth_token(token: Optional[str]) -> Optional[str]:
     return cleaned if cleaned else None
 
 
+def validate_date_range(
+    from_date: Optional[str], to_date: Optional[str]
+) -> Tuple[Optional[str], Optional[str]]:
+    """Validate and normalize ISO-8601 date range boundaries for contribution queries.
+
+    Args:
+        from_date: Optional ISO 8601 start date/datetime.
+        to_date: Optional ISO 8601 end date/datetime.
+
+    Returns:
+        Tuple of (normalized_from_date, normalized_to_date).
+
+    Raises:
+        GitHubAPIError: If date strings cannot be parsed or if from_date > to_date.
+    """
+    dt_from: Optional[datetime] = None
+    dt_to: Optional[datetime] = None
+
+    if from_date:
+        if not isinstance(from_date, str):
+            raise GitHubAPIError("from_date must be an ISO-8601 date string")
+        clean_from = from_date.strip()
+        try:
+            dt_from = datetime.fromisoformat(clean_from.replace("Z", "+00:00"))
+        except (ValueError, TypeError) as exc:
+            raise GitHubAPIError(f"Invalid from_date format '{from_date}': must be ISO-8601") from exc
+
+    if to_date:
+        if not isinstance(to_date, str):
+            raise GitHubAPIError("to_date must be an ISO-8601 date string")
+        clean_to = to_date.strip()
+        try:
+            dt_to = datetime.fromisoformat(clean_to.replace("Z", "+00:00"))
+        except (ValueError, TypeError) as exc:
+            raise GitHubAPIError(f"Invalid to_date format '{to_date}': must be ISO-8601") from exc
+
+    if dt_from and dt_to and dt_from > dt_to:
+        raise GitHubAPIError(f"from_date ({from_date}) cannot be later than to_date ({to_date})")
+
+    norm_from = dt_from.isoformat() if dt_from else None
+    norm_to = dt_to.isoformat() if dt_to else None
+    return (norm_from, norm_to)
+
+
+def parse_rate_limit_headers(headers: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Extract and validate GitHub API rate limit status from HTTP response headers.
+
+    Args:
+        headers: Case-insensitive dictionary or Mapping of response headers.
+
+    Returns:
+        Dictionary containing 'limit', 'remaining', 'reset_epoch', 'used', and 'is_depleted'.
+    """
+    result: Dict[str, Any] = {
+        "limit": None,
+        "remaining": None,
+        "reset_epoch": None,
+        "used": None,
+        "is_depleted": False,
+    }
+    if not headers or not isinstance(headers, (dict, collections.abc.Mapping)):
+        return result
+
+    lower_headers = {str(k).lower(): str(v).strip() for k, v in headers.items()}
+
+    def _extract_int(key: str) -> Optional[int]:
+        val = lower_headers.get(key)
+        if val is not None and val.isdigit():
+            return int(val)
+        return None
+
+    limit = _extract_int("x-ratelimit-limit")
+    remaining = _extract_int("x-ratelimit-remaining")
+    reset_epoch = _extract_int("x-ratelimit-reset")
+    used = _extract_int("x-ratelimit-used")
+
+    result["limit"] = limit
+    result["remaining"] = remaining
+    result["reset_epoch"] = reset_epoch
+    result["used"] = used
+    result["is_depleted"] = remaining is not None and remaining <= 0
+
+    return result
+
+
 GRAPHQL_CONTRIBUTIONS_QUERY = """
 query ($login: String!, $from: DateTime, $to: DateTime) {
   user(login: $login) {
@@ -147,11 +233,12 @@ def fetch_contributions_graphql(
     headers = get_default_headers(token)
     req_session = session or requests.Session()
 
+    norm_from, norm_to = validate_date_range(from_date, to_date)
     variables: Dict[str, Any] = {"login": clean_username}
-    if from_date:
-        variables["from"] = from_date
-    if to_date:
-        variables["to"] = to_date
+    if norm_from:
+        variables["from"] = norm_from
+    if norm_to:
+        variables["to"] = norm_to
 
     payload = {"query": GRAPHQL_CONTRIBUTIONS_QUERY, "variables": variables}
 
