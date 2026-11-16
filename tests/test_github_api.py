@@ -14,7 +14,9 @@ from buildsite.github_api import (
     fetch_contributions_rest_fallback,
     get_default_headers,
     get_demo_contributions,
+    parse_rate_limit_headers,
     sanitize_auth_token,
+    validate_date_range,
     validate_github_username,
 )
 
@@ -180,4 +182,45 @@ def test_sanitize_auth_token_and_headers():
     # Header generation
     headers = get_default_headers("ghp_safe_token")
     assert headers["Authorization"] == "bearer ghp_safe_token"
+
+
+def test_validate_date_range():
+    # Valid ranges
+    assert validate_date_range(None, None) == (None, None)
+    n_from, n_to = validate_date_range("2026-01-01T00:00:00Z", "2026-12-31T23:59:59Z")
+    assert n_from.startswith("2026-01-01")
+    assert n_to.startswith("2026-12-31")
+
+    # Inverted range raises error
+    with pytest.raises(GitHubAPIError):
+        validate_date_range("2026-12-31", "2026-01-01")
+
+    # Invalid string raises error
+    with pytest.raises(GitHubAPIError):
+        validate_date_range("not-a-date", None)
+
+
+def test_parse_rate_limit_headers():
+    headers = {
+        "X-RateLimit-Limit": "5000",
+        "X-RateLimit-Remaining": "4950",
+        "X-RateLimit-Reset": "1763283600",
+        "X-RateLimit-Used": "50",
+    }
+    status = parse_rate_limit_headers(headers)
+    assert status["limit"] == 5000
+    assert status["remaining"] == 4950
+    assert status["reset_epoch"] == 1763283600
+    assert status["used"] == 50
+    assert status["is_depleted"] is False
+
+    # Depleted quota
+    depleted_headers = {"x-ratelimit-remaining": "0"}
+    depleted = parse_rate_limit_headers(depleted_headers)
+    assert depleted["is_depleted"] is True
+
+    # Empty / none fallback
+    empty_status = parse_rate_limit_headers(None)
+    assert empty_status["limit"] is None
+    assert empty_status["is_depleted"] is False
 
