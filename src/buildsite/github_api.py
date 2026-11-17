@@ -8,7 +8,9 @@ privacy policies.
 from __future__ import annotations
 
 import logging
+import math
 import os
+import random
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -167,6 +169,80 @@ def parse_rate_limit_headers(headers: Optional[Dict[str, Any]]) -> Dict[str, Any
     result["is_depleted"] = remaining is not None and remaining <= 0
 
     return result
+
+
+def validate_pagination_bounds(
+    page: Any = 1,
+    per_page: Any = 30,
+    max_per_page: int = 100,
+) -> Tuple[int, int]:
+    """Defensively validate and constrain REST API pagination parameters.
+
+    Clamps page >= 1 and per_page between 1 and max_per_page to prevent
+    resource exhaustion or integer overflow attacks.
+    """
+    try:
+        page_val = int(page) if page is not None else 1
+    except (ValueError, TypeError):
+        page_val = 1
+
+    try:
+        per_page_val = int(per_page) if per_page is not None else 30
+    except (ValueError, TypeError):
+        per_page_val = 30
+
+    safe_page = max(1, page_val)
+    safe_per_page = max(1, min(max_per_page, per_page_val))
+    return safe_page, safe_per_page
+
+
+def compute_backoff_delay(
+    attempt: int,
+    base_delay: float = 1.0,
+    max_delay: float = 60.0,
+    jitter: bool = True,
+) -> float:
+    """Compute truncated exponential backoff delay with optional jitter.
+
+    T = min(max_delay, base_delay * 2^attempt)
+    """
+    safe_attempt = max(0, min(10, int(attempt)))
+    delay = min(max_delay, base_delay * (2 ** safe_attempt))
+    if jitter:
+        # Full jitter between 0.5 * delay and delay
+        delay = delay * (0.5 + 0.5 * random.random())
+    return round(delay, 3)
+
+
+def sanitize_repo_slug(repo_slug: Any) -> str:
+    """Validate and sanitize a GitHub repository slug ('owner/repo').
+
+    Enforces naming convention, length constraints, and rejects path traversal,
+    null bytes, and control characters.
+    """
+    if not isinstance(repo_slug, str):
+        raise GitHubAPIError("Repository slug must be a string")
+    slug = repo_slug.strip()
+    if not slug or len(slug) > 100:
+        raise GitHubAPIError(f"Invalid repository slug length: '{slug}'")
+
+    if any(ord(c) < 32 or ord(c) == 127 for c in slug):
+        raise GitHubAPIError("Repository slug contains invalid control characters")
+
+    if ".." in slug or "//" in slug or slug.startswith("/") or slug.endswith("/"):
+        raise GitHubAPIError(f"Repository slug contains path traversal or invalid slashes: '{slug}'")
+
+    parts = slug.split("/")
+    if len(parts) != 2:
+        raise GitHubAPIError(f"Repository slug must be in 'owner/repo' format, got '{slug}'")
+
+    owner, repo = parts
+    if not re.fullmatch(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]*$", owner):
+        raise GitHubAPIError(f"Invalid repository owner format: '{owner}'")
+    if not re.fullmatch(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]*$", repo):
+        raise GitHubAPIError(f"Invalid repository name format: '{repo}'")
+
+    return f"{owner}/{repo}"
 
 
 GRAPHQL_CONTRIBUTIONS_QUERY = """

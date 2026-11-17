@@ -18,6 +18,9 @@ from buildsite.github_api import (
     sanitize_auth_token,
     validate_date_range,
     validate_github_username,
+    compute_backoff_delay,
+    sanitize_repo_slug,
+    validate_pagination_bounds,
 )
 
 
@@ -223,4 +226,55 @@ def test_parse_rate_limit_headers():
     empty_status = parse_rate_limit_headers(None)
     assert empty_status["limit"] is None
     assert empty_status["is_depleted"] is False
+
+
+def test_defensive_pagination_and_backoff():
+    # Pagination bounding
+    page, per_page = validate_pagination_bounds(page=-5, per_page=500, max_per_page=100)
+    assert page == 1
+    assert per_page == 100
+
+    page, per_page = validate_pagination_bounds(page="3", per_page="25")
+    assert page == 3
+    assert per_page == 25
+
+    page, per_page = validate_pagination_bounds(page=None, per_page="bad")
+    assert page == 1
+    assert per_page == 30
+
+    # Backoff delay computation
+    delay_0 = compute_backoff_delay(0, base_delay=1.0, jitter=False)
+    assert delay_0 == 1.0
+
+    delay_2 = compute_backoff_delay(2, base_delay=1.0, jitter=False)
+    assert delay_2 == 4.0
+
+    delay_capped = compute_backoff_delay(10, base_delay=1.0, max_delay=15.0, jitter=False)
+    assert delay_capped == 15.0
+
+    delay_jittered = compute_backoff_delay(1, base_delay=2.0, jitter=True)
+    assert 1.0 <= delay_jittered <= 4.0
+
+
+def test_sanitize_repo_slug():
+    # Valid slugs
+    assert sanitize_repo_slug("ATLURI0001/buildsite") == "ATLURI0001/buildsite"
+    assert sanitize_repo_slug("owner-name/repo.tool-1") == "owner-name/repo.tool-1"
+
+    # Traversal and invalid formats
+    with pytest.raises(GitHubAPIError):
+        sanitize_repo_slug("../evil/repo")
+
+    with pytest.raises(GitHubAPIError):
+        sanitize_repo_slug("single_slug")
+
+    with pytest.raises(GitHubAPIError):
+        sanitize_repo_slug("/leading/slash")
+
+    with pytest.raises(GitHubAPIError):
+        sanitize_repo_slug("owner/repo/sub")
+
+    with pytest.raises(GitHubAPIError):
+        sanitize_repo_slug(None)
+
 
