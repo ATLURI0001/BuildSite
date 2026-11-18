@@ -91,7 +91,10 @@ def load_config(config_path: Optional[str] = None) -> UserConfig:
     """Load and validate UserConfig from YAML file or default search paths."""
     search_paths = []
     if config_path:
-        search_paths.append(Path(config_path))
+        explicit_path = Path(config_path)
+        if not explicit_path.is_file():
+            raise ConfigValidationError(f"Configuration file not found: {config_path}")
+        search_paths.append(explicit_path)
     else:
         search_paths.extend([
             Path("buildsite.yml"),

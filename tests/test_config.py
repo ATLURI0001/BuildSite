@@ -58,3 +58,9 @@ def test_load_config_strict_render_dimension_validation(tmp_path):
     assert loaded.width == 2560
     assert loaded.height == 200
     assert loaded.output_dir == "dist/svg"
+
+
+def test_load_config_explicit_nonexistent_path_raises_error(tmp_path):
+    missing_path = tmp_path / "nonexistent_buildsite.yml"
+    with pytest.raises(ConfigValidationError, match="Configuration file not found"):
+        load_config(str(missing_path))
