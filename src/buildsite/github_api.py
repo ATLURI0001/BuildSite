@@ -104,23 +104,32 @@ def validate_date_range(
     dt_from: Optional[datetime] = None
     dt_to: Optional[datetime] = None
 
-    if from_date:
+    if from_date is not None:
         if not isinstance(from_date, str):
             raise GitHubAPIError("from_date must be an ISO-8601 date string")
         clean_from = from_date.strip()
+        if not clean_from:
+            raise GitHubAPIError("from_date cannot be empty or whitespace")
         try:
             dt_from = datetime.fromisoformat(clean_from.replace("Z", "+00:00"))
         except (ValueError, TypeError) as exc:
             raise GitHubAPIError(f"Invalid from_date format '{from_date}': must be ISO-8601") from exc
 
-    if to_date:
+    if to_date is not None:
         if not isinstance(to_date, str):
             raise GitHubAPIError("to_date must be an ISO-8601 date string")
         clean_to = to_date.strip()
+        if not clean_to:
+            raise GitHubAPIError("to_date cannot be empty or whitespace")
         try:
             dt_to = datetime.fromisoformat(clean_to.replace("Z", "+00:00"))
         except (ValueError, TypeError) as exc:
             raise GitHubAPIError(f"Invalid to_date format '{to_date}': must be ISO-8601") from exc
+
+    if dt_from and dt_from.tzinfo is None:
+        dt_from = dt_from.replace(tzinfo=timezone.utc)
+    if dt_to and dt_to.tzinfo is None:
+        dt_to = dt_to.replace(tzinfo=timezone.utc)
 
     if dt_from and dt_to and dt_from > dt_to:
         raise GitHubAPIError(f"from_date ({from_date}) cannot be later than to_date ({to_date})")
