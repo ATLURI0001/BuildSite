@@ -41,6 +41,8 @@ def analyze_contribution_calendar(
     for entry in days or ():
         raw_date = entry.date if isinstance(entry, ContributionDay) else (entry.get("date") if isinstance(entry, dict) else None)
         raw_count = entry.count if isinstance(entry, ContributionDay) else (entry.get("count", 0) if isinstance(entry, dict) else 0)
+        if raw_count is None:
+            raw_count = 0
         if not isinstance(raw_date, str):
             continue
         try:
@@ -210,6 +212,32 @@ class ConditionalETagCache:
         self._store.move_to_end(k)
         self.hits_304 += 1
         return entry.payload
+
+    def invalidate(self, key: Any) -> bool:
+        """Purge a specific cached entry by key. Returns True if removed, False if not present."""
+        try:
+            k = self._normalize_key(key)
+        except ValueError:
+            return False
+        return self._store.pop(k, None) is not None
+
+    def clear(self) -> None:
+        """Purge all cached entries and reset active cache contents."""
+        self._store.clear()
+
+    def __contains__(self, key: Any) -> bool:
+        """Check whether a non-expired entry exists for the given key."""
+        try:
+            k = self._normalize_key(key)
+        except ValueError:
+            return False
+        entry = self._store.get(k)
+        if entry is None:
+            return False
+        return (self._clock() - entry.stored_at) <= entry.ttl_seconds
+
+    def __len__(self) -> int:
+        return len(self._store)
 
     def stats(self) -> dict[str, int]:
         return {

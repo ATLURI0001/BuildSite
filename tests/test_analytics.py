@@ -75,3 +75,48 @@ def test_conditional_etag_cache_miss_on_unmapped_304_and_key_normalization():
     import pytest
     with pytest.raises(ValueError, match="cache key cannot be empty"):
         cache.get_fresh("   ")
+
+
+def test_conditional_etag_cache_invalidation_clear_and_dunder_methods():
+    now = [10.0]
+    cache = ConditionalETagCache(max_entries=5, default_ttl_seconds=50.0, clock=lambda: now[0])
+
+    assert len(cache) == 0
+    assert "user:alpha" not in cache
+
+    cache.store("user:alpha", {"val": 1}, etag="etag1")
+    cache.store("user:beta", {"val": 2}, etag="etag2")
+
+    assert len(cache) == 2
+    assert "user:alpha" in cache
+    assert "  user:beta  " in cache
+    assert "user:gamma" not in cache
+
+    # Expired check via __contains__
+    now[0] = 70.0
+    assert "user:alpha" not in cache
+
+    # Invalidate specific entry
+    now[0] = 10.0
+    cache.store("user:alpha", {"val": 1}, etag="etag1")
+    assert cache.invalidate("user:alpha") is True
+    assert cache.invalidate("user:alpha") is False
+    assert cache.invalidate("   ") is False
+    assert len(cache) == 1
+
+    # Clear entire cache
+    cache.clear()
+    assert len(cache) == 0
+    assert "user:beta" not in cache
+
+
+def test_analyze_contribution_calendar_none_count_handling():
+    days = [
+        {"date": "2024-04-01", "count": None},
+        {"date": "2024-04-02", "count": 3},
+    ]
+    report = analyze_contribution_calendar(days, reference_date=date(2024, 4, 3))
+    assert report["total_contributions"] == 3
+    assert report["active_days"] == 1
+    assert report["current_streak"] == 1
+
