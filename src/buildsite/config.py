@@ -168,4 +168,29 @@ def load_config(config_path: Optional[str] = None) -> UserConfig:
         cfg.output_dir = sanitize_output_dir(raw_dir)
         cfg.png_fallback = bool(out_sec.get("png_fallback", True))
 
+    validate_config(cfg)
     return cfg
+
+
+def get_default_config() -> UserConfig:
+    """Return a fresh default UserConfig."""
+    cfg = UserConfig()
+    validate_config(cfg)
+    return cfg
+
+
+def validate_config(cfg: UserConfig) -> None:
+    """Validate UserConfig fields, raising ConfigValidationError if any value is invalid."""
+    if not isinstance(cfg, UserConfig):
+        raise ConfigValidationError("Expected UserConfig instance.")
+    if cfg.width < 400 or cfg.width > 2560:
+        raise ConfigValidationError(f"Invalid width {cfg.width}: must be between 400 and 2560.")
+    if cfg.height < 200 or cfg.height > 1440:
+        raise ConfigValidationError(f"Invalid height {cfg.height}: must be between 200 and 1440.")
+    if cfg.format.lower() not in VALID_FORMATS:
+        raise ConfigValidationError(f"Invalid format '{cfg.format}': must be one of {sorted(VALID_FORMATS)}.")
+    if cfg.lighting.lower() not in VALID_LIGHTING_MODES:
+        raise ConfigValidationError(f"Invalid lighting '{cfg.lighting}': must be one of {sorted(VALID_LIGHTING_MODES)}.")
+    if cfg.animation.lower() not in VALID_ANIMATION_MODES:
+        raise ConfigValidationError(f"Invalid animation '{cfg.animation}': must be one of {sorted(VALID_ANIMATION_MODES)}.")
+    sanitize_output_dir(cfg.output_dir)
