@@ -152,34 +152,45 @@ class ConditionalETagCache:
         self.hits_304 = 0
         self.misses = 0
 
+    def _normalize_key(self, key: Any) -> str:
+        if not isinstance(key, str):
+            key = str(key)
+        cleaned = key.strip()
+        if not cleaned:
+            raise ValueError("cache key cannot be empty")
+        return cleaned
+
     def get_conditional_headers(self, key: str) -> dict[str, str]:
         """Return If-None-Match header when an ETag exists for key, even if TTL elapsed."""
-        entry = self._store.get(key)
+        k = self._normalize_key(key)
+        entry = self._store.get(k)
         if entry is None or not entry.etag:
             return {}
         return {"If-None-Match": entry.etag}
 
     def get_fresh(self, key: str) -> Any | None:
         """Return cached payload if present and within TTL, otherwise None."""
-        entry = self._store.get(key)
+        k = self._normalize_key(key)
+        entry = self._store.get(k)
         if entry is None:
             self.misses += 1
             return None
         if (self._clock() - entry.stored_at) > entry.ttl_seconds:
             self.misses += 1
             return None
-        self._store.move_to_end(key)
+        self._store.move_to_end(k)
         self.hits_fresh += 1
         return entry.payload
 
     def store(self, key: str, payload: Any, etag: str = "", ttl_seconds: float | None = None) -> None:
         """Store or refresh a response payload and optional ETag with LRU bounding."""
+        k = self._normalize_key(key)
         ttl = self.default_ttl_seconds if ttl_seconds is None else float(ttl_seconds)
-        if key in self._store:
-            self._store.move_to_end(key)
+        if k in self._store:
+            self._store.move_to_end(k)
         elif len(self._store) >= self.max_entries:
             self._store.popitem(last=False)
-        self._store[key] = _ETagEntry(
+        self._store[k] = _ETagEntry(
             etag=etag.strip(),
             payload=payload,
             stored_at=self._clock(),
@@ -188,13 +199,15 @@ class ConditionalETagCache:
 
     def handle_not_modified(self, key: str, ttl_seconds: float | None = None) -> Any | None:
         """Refresh TTL and return cached payload upon HTTP 304 Not Modified from GitHub API."""
-        entry = self._store.get(key)
+        k = self._normalize_key(key)
+        entry = self._store.get(k)
         if entry is None:
+            self.misses += 1
             return None
         entry.stored_at = self._clock()
         if ttl_seconds is not None:
             entry.ttl_seconds = max(0.0, float(ttl_seconds))
-        self._store.move_to_end(key)
+        self._store.move_to_end(k)
         self.hits_304 += 1
         return entry.payload
 
