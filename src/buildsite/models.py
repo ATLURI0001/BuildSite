@@ -243,6 +243,27 @@ class ContributionSnapshot:
     collected_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     source: str = "graphql"         # "graphql", "rest", "cache", or "demo"
 
+    def is_empty(self) -> bool:
+        """Return True if snapshot contains no contributions and no calendar days."""
+        return self.total_contributions <= 0 and len(self.calendar_days) == 0
+
+    def get_max_daily_contributions(self) -> int:
+        """Return maximum contributions achieved on any single calendar day."""
+        if not self.calendar_days:
+            return 0
+        return max((d.count for d in self.calendar_days), default=0)
+
+    def get_total_verified(self) -> int:
+        """Return the maximum of total_contributions or sum of calendar days."""
+        calendar_sum = sum(d.count for d in self.calendar_days) if self.calendar_days else 0
+        return max(self.total_contributions, calendar_sum)
+
+    def get_active_ratio(self) -> float:
+        """Return ratio of active days to calendar days, clamped between 0.0 and 1.0."""
+        if not self.calendar_days:
+            return 0.0
+        return min(1.0, max(0.0, self.active_days / len(self.calendar_days)))
+
 
 @dataclass
 class PropertyState:
@@ -262,6 +283,10 @@ class PropertyState:
     last_updated: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     last_contribution_count: int = 0
     hash_signature: str = ""
+
+    def is_advanced(self) -> bool:
+        """Return True if property has evolved beyond initial plot phase."""
+        return self.milestone != ConstructionMilestone.PLOT or self.total_contributions > 0
 
 
 @dataclass
@@ -286,3 +311,9 @@ class UserConfig:
     output_dir: str = "assets/buildsite"
     png_fallback: bool = True
     preserve_unlocks: bool = True
+
+    def get_aspect_ratio(self) -> float:
+        """Return aspect ratio (width / height) safely guarding against non-positive heights."""
+        if self.height <= 0:
+            return 2.0
+        return self.width / self.height

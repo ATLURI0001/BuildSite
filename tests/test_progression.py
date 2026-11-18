@@ -4,6 +4,7 @@ import pytest
 
 from buildsite.models import (
     ConstructionMilestone,
+    ContributionDay,
     ContributionSnapshot,
     PropertyState,
     UserConfig,
@@ -147,3 +148,42 @@ def test_progression_handles_none_and_malformed_inputs():
     snap = ContributionSnapshot(user_id=1, login="test", total_contributions=10, active_days=5)
     state = calculate_property_state(snap, None)
     assert state.milestone == ConstructionMilestone.FOUNDATIONS
+
+
+def test_contribution_snapshot_and_model_helpers():
+    """Verify helper inspection methods on ContributionSnapshot, PropertyState, and UserConfig."""
+    empty_snap = ContributionSnapshot(user_id=1, login="tester", total_contributions=0, active_days=0)
+    assert empty_snap.is_empty() is True
+    assert empty_snap.get_max_daily_contributions() == 0
+    assert empty_snap.get_total_verified() == 0
+    assert empty_snap.get_active_ratio() == 0.0
+
+    days = [
+        ContributionDay(date="2026-01-01", count=5),
+        ContributionDay(date="2026-01-02", count=12),
+        ContributionDay(date="2026-01-03", count=0),
+        ContributionDay(date="2026-01-04", count=8),
+    ]
+    active_snap = ContributionSnapshot(
+        user_id=2,
+        login="active_user",
+        total_contributions=25,
+        active_days=3,
+        calendar_days=days,
+    )
+    assert active_snap.is_empty() is False
+    assert active_snap.get_max_daily_contributions() == 12
+    assert active_snap.get_total_verified() == 25
+    assert active_snap.get_active_ratio() == 0.75
+
+    # PropertyState.is_advanced
+    state_plot = PropertyState(milestone=ConstructionMilestone.PLOT, total_contributions=0)
+    assert state_plot.is_advanced() is False
+    state_foundations = PropertyState(milestone=ConstructionMilestone.FOUNDATIONS, total_contributions=10)
+    assert state_foundations.is_advanced() is True
+
+    # UserConfig.get_aspect_ratio
+    cfg_standard = UserConfig(width=1280, height=640)
+    assert cfg_standard.get_aspect_ratio() == 2.0
+    cfg_zero_height = UserConfig(width=1280, height=0)
+    assert cfg_zero_height.get_aspect_ratio() == 2.0
