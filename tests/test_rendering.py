@@ -104,6 +104,24 @@ def test_png_fallback_export(tmp_path: Path):
     loaded = Image.open(out_png)
     assert loaded.size == (1280, 640)
 
+    # String path and None image handling
+    str_png = str(tmp_path / "string_path_fallback.png")
+    export_png_fallback(None, str_png)
+    assert Path(str_png).is_file()
+
+    # Directory target guard raises IsADirectoryError
+    with pytest.raises(IsADirectoryError):
+        export_png_fallback(img, tmp_path)
+
+    # export_svg_to_file with string path, None fallback, and directory guard
+    str_svg = str(tmp_path / "test_export.svg")
+    export_svg_to_file(None, str_svg)
+    assert Path(str_svg).is_file()
+    assert Path(str_svg).read_text(encoding="utf-8") == ""
+
+    with pytest.raises(IsADirectoryError):
+        export_svg_to_file("<svg></svg>", tmp_path)
+
 
 def test_fixture_progression_visuals(tmp_path: Path):
     """Visual regression test verifying property evolution at key contribution counts:

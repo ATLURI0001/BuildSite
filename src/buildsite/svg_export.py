@@ -217,21 +217,29 @@ def generate_svg(state: PropertyState, config: UserConfig, rendered_image: Optio
 
 
 def export_svg_to_file(
-    svg_string: str,
-    output_path: Path
+    svg_string: Optional[str],
+    output_path: Path | str
 ) -> Path:
-    """Save SVG string to designated path."""
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(svg_string)
-    return output_path
+    """Save SVG string to designated path, supporting string paths and guarding against directories."""
+    out = Path(output_path)
+    if out.is_dir():
+        raise IsADirectoryError(f"Target path is a directory: {out}")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(svg_string or "")
+    return out
 
 
 def export_png_fallback(
-    rendered_image: Image.Image,
-    output_path: Path
+    rendered_image: Optional[Image.Image],
+    output_path: Path | str
 ) -> Path:
-    """Export fallback PNG image."""
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    rendered_image.save(output_path, format="PNG", optimize=True)
-    return output_path
+    """Export fallback PNG image, supporting string paths and None rendered image fallbacks."""
+    out = Path(output_path)
+    if out.is_dir():
+        raise IsADirectoryError(f"Target path is a directory: {out}")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if rendered_image is None:
+        rendered_image = Image.new("RGBA", (1280, 640), (20, 24, 30, 255))
+    rendered_image.save(out, format="PNG", optimize=True)
+    return out
