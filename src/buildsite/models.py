@@ -192,6 +192,35 @@ class PropertyVariation:
     lighting_temp_kelvin: int       # 2700K to 4000K
     roof_accent: str                # "anthracite", "slate", "timber_overhang"
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert variation into a JSON-serializable dictionary."""
+        return {
+            "seed": self.seed,
+            "style_name": self.style_name,
+            "primary_tint": self.primary_tint,
+            "accent_material": self.accent_material,
+            "pool_water_tone": self.pool_water_tone,
+            "garden_species": self.garden_species,
+            "lighting_temp_kelvin": self.lighting_temp_kelvin,
+            "roof_accent": self.roof_accent,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> PropertyVariation:
+        """Construct PropertyVariation safely from dictionary data with sensible fallbacks."""
+        if not isinstance(data, dict):
+            data = {}
+        return cls(
+            seed=str(data.get("seed", "") or "default_buildsite_seed"),
+            style_name=str(data.get("style_name", "modern_minimal") or "modern_minimal"),
+            primary_tint=str(data.get("primary_tint", "#F4F4F6") or "#F4F4F6"),
+            accent_material=str(data.get("accent_material", "black_steel") or "black_steel"),
+            pool_water_tone=str(data.get("pool_water_tone", "turquoise") or "turquoise"),
+            garden_species=str(data.get("garden_species", "mediterranean") or "mediterranean"),
+            lighting_temp_kelvin=int(data.get("lighting_temp_kelvin", 3200) or 3200),
+            roof_accent=str(data.get("roof_accent", "anthracite") or "anthracite"),
+        )
+
 
 @dataclass
 class ContributionDay:

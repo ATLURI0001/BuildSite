@@ -98,7 +98,7 @@ def derive_property_variation(seed: str, preferred_style: str = "auto") -> Prope
     Returns:
         PropertyVariation with deterministic styling attributes.
     """
-    clean_seed = str(seed or "default_buildsite_seed")
+    clean_seed = str(seed or "").strip() or "default_buildsite_seed"
     # Deterministic integer from SHA-256
     digest = hashlib.sha256(clean_seed.encode("utf-8")).hexdigest()
     int_seed = int(digest[:12], 16)
