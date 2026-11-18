@@ -194,6 +194,18 @@ def test_validate_date_range():
     assert n_from.startswith("2026-01-01")
     assert n_to.startswith("2026-12-31")
 
+    # Mixed naive and timezone-aware dates are normalized cleanly without TypeError
+    n_naive, n_aware = validate_date_range("2026-01-01T00:00:00", "2026-06-01T00:00:00Z")
+    assert "+00:00" in n_naive
+    assert "+00:00" in n_aware
+
+    # Whitespace-only strings raise descriptive GitHubAPIError
+    with pytest.raises(GitHubAPIError, match="cannot be empty or whitespace"):
+        validate_date_range("   ", None)
+
+    with pytest.raises(GitHubAPIError, match="cannot be empty or whitespace"):
+        validate_date_range(None, "\t\n")
+
     # Inverted range raises error
     with pytest.raises(GitHubAPIError):
         validate_date_range("2026-12-31", "2026-01-01")
