@@ -50,9 +50,10 @@ def find_assets_directory() -> Path:
     return candidates[0]
 
 
-def load_layer_manifest(assets_dir: Path) -> Dict[str, Any]:
+def load_layer_manifest(assets_dir: Path | str) -> Dict[str, Any]:
     """Load the layer manifest if present."""
-    manifest_path = assets_dir / "manifests" / "layer_manifest.json"
+    base_dir = Path(assets_dir)
+    manifest_path = base_dir / "manifests" / "layer_manifest.json"
     if manifest_path.is_file():
         try:
             with open(manifest_path, "r", encoding="utf-8") as f:
@@ -62,19 +63,23 @@ def load_layer_manifest(assets_dir: Path) -> Dict[str, Any]:
     return {"layers": {}}
 
 
-def resolve_layer_path(layer_name: str, assets_dir: Path, manifest: Dict[str, Any]) -> Optional[Path]:
+def resolve_layer_path(layer_name: str, assets_dir: Path | str, manifest: Dict[str, Any]) -> Optional[Path]:
     """Resolve file path for a specific layer name."""
+    clean_layer = str(layer_name or "").strip()
+    if not clean_layer:
+        return None
+    base_dir = Path(assets_dir)
     # Check manifest first
-    layer_info = manifest.get("layers", {}).get(layer_name)
+    layer_info = manifest.get("layers", {}).get(clean_layer)
     if layer_info and "file" in layer_info:
-        cand = assets_dir / layer_info["file"]
+        cand = base_dir / layer_info["file"]
         if cand.is_file():
             return cand
 
     # Direct search across subdirectories
     subdirs = ["architecture", "environment", "landscaping", "pool", ""]
     for s in subdirs:
-        cand = assets_dir / s / f"{layer_name}.png"
+        cand = base_dir / s / f"{clean_layer}.png"
         if cand.is_file():
             return cand
 
@@ -95,9 +100,9 @@ def apply_dusk_lighting(base_img: Image.Image, emissive_img: Image.Image) -> Ima
 
 
 def composite_property(
-    state: PropertyState,
-    config: UserConfig,
-    assets_dir: Optional[Path] = None,
+    state: Optional[PropertyState],
+    config: Optional[UserConfig] = None,
+    assets_dir: Optional[Path | str] = None,
     variation: Optional[PropertyVariation] = None
 ) -> Image.Image:
     """Composite the active architectural layers into a finished property rendering.
@@ -105,20 +110,25 @@ def composite_property(
     Args:
         state: Current property state containing active layers and progress.
         config: Rendering and user configuration.
-        assets_dir: Optional directory containing asset files.
+        assets_dir: Optional directory containing asset files (Path or str).
         variation: Optional deterministic variation; derived if None.
 
     Returns:
-        Pillow Image in RGBA format (1280x640).
+        Pillow Image in RGBA format (1280x640 default).
     """
-    actual_assets_dir = assets_dir or find_assets_directory()
+    cfg = config if config is not None else UserConfig()
+    target_w = max(1, int(cfg.width or 1280))
+    target_h = max(1, int(cfg.height or 640))
+
+    if state is None:
+        return Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
+
+    actual_assets_dir = Path(assets_dir) if assets_dir else find_assets_directory()
     manifest = load_layer_manifest(actual_assets_dir)
 
-    target_w = config.width
-    target_h = config.height
     canvas = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
 
-    actual_variation = variation or derive_property_variation(state.seed, config.style)
+    actual_variation = variation or derive_property_variation(state.seed, cfg.style)
 
     for layer_name in state.active_layers:
         layer_path = resolve_layer_path(layer_name, actual_assets_dir, manifest)

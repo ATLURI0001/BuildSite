@@ -34,6 +34,15 @@ def test_composite_property_layers():
     assert img.size == (1280, 640)
     assert img.mode == "RGBA"
 
+    # Test with string assets_dir path
+    img_str = composite_property(state, cfg, assets_dir=str(assets_dir))
+    assert img_str.size == (1280, 640)
+
+    # Test with None state and None config fallback
+    img_none = composite_property(None, None)
+    assert img_none.size == (1280, 640)
+    assert img_none.mode == "RGBA"
+
 
 def test_svg_valid_xml_and_standards():
     """Verify that generated SVG is well-formed XML and complies with security rules."""
