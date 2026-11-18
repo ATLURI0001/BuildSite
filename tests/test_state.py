@@ -67,6 +67,29 @@ def test_state_change_detection():
     )
     assert has_state_changed(s1, s3) is True
 
+    # Fallback when hash signatures are unpopulated
+    s_unhashed1 = PropertyState(total_contributions=50, milestone=ConstructionMilestone.FRAMING)
+    s_unhashed2 = PropertyState(total_contributions=50, milestone=ConstructionMilestone.FRAMING)
+    s_unhashed3 = PropertyState(total_contributions=60, milestone=ConstructionMilestone.STRUCTURE)
+    assert has_state_changed(s_unhashed1, s_unhashed2) is False
+    assert has_state_changed(s_unhashed1, s_unhashed3) is True
+
+
+def test_save_and_load_with_string_paths_and_directory_guard(tmp_path: Path):
+    """Verify string paths are supported and saving to directory raises StateError."""
+    from buildsite.state import StateError
+
+    file_str = str(tmp_path / "str_state.json")
+    state = PropertyState(user_id=999, login="tester", hash_signature="sig999")
+    save_state(state, file_str)
+    loaded = load_state(file_str)
+    assert loaded is not None
+    assert loaded.user_id == 999
+
+    # Attempting to save to an existing directory
+    with pytest.raises(StateError, match="Target state file path is a directory"):
+        save_state(state, tmp_path)
+
 
 def test_load_nonexistent_state(tmp_path: Path):
     """Loading nonexistent state returns None without error."""
