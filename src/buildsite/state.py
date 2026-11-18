@@ -42,23 +42,24 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
-def load_state(state_file_path: Path) -> Optional[PropertyState]:
+def load_state(state_file_path: Path | str) -> Optional[PropertyState]:
     """Load and migrate existing PropertyState from disk.
 
     Returns None if file does not exist or cannot be parsed as a JSON object.
     """
-    if not state_file_path.is_file():
+    path = Path(state_file_path)
+    if not path.is_file():
         return None
 
     try:
-        with open(state_file_path, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
     except Exception as exc:
-        logger.warning("Could not read existing state file %s: %s", state_file_path, exc)
+        logger.warning("Could not read existing state file %s: %s", path, exc)
         return None
 
     if not isinstance(data, dict):
-        logger.warning("Expected JSON object in state file %s, got %s", state_file_path, type(data).__name__)
+        logger.warning("Expected JSON object in state file %s, got %s", path, type(data).__name__)
         return None
 
     # Handle schema migration if needed
@@ -97,9 +98,13 @@ def load_state(state_file_path: Path) -> Optional[PropertyState]:
     )
 
 
-def save_state(state: PropertyState, state_file_path: Path) -> None:
+def save_state(state: PropertyState, state_file_path: Path | str) -> None:
     """Save PropertyState to disk atomically."""
-    state_file_path.parent.mkdir(parents=True, exist_ok=True)
+    path = Path(state_file_path)
+    if path.is_dir():
+        raise StateError(f"Target state file path is a directory: {path}")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
 
     payload = {
         "schema_version": state.schema_version,
@@ -119,14 +124,31 @@ def save_state(state: PropertyState, state_file_path: Path) -> None:
     }
 
     # Write to temporary file then replace atomically
-    tmp_path = state_file_path.with_suffix(".tmp")
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2, sort_keys=True)
-    tmp_path.replace(state_file_path)
+    tmp_path = path.with_suffix(".tmp")
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, sort_keys=True)
+        tmp_path.replace(path)
+    except Exception:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+        raise
 
 
 def has_state_changed(previous_state: Optional[PropertyState], new_state: PropertyState) -> bool:
     """Check if the new state has meaningful changes requiring asset regeneration."""
     if previous_state is None:
         return True
-    return previous_state.hash_signature != new_state.hash_signature
+    if previous_state.hash_signature and new_state.hash_signature:
+        return previous_state.hash_signature != new_state.hash_signature
+    return (
+        previous_state.total_contributions != new_state.total_contributions
+        or previous_state.active_days != new_state.active_days
+        or previous_state.milestone != new_state.milestone
+        or previous_state.progress_ratio != new_state.progress_ratio
+        or previous_state.active_layers != new_state.active_layers
+        or previous_state.variation != new_state.variation
+    )
