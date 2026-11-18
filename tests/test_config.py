@@ -1,5 +1,13 @@
 import pytest
-from buildsite.config import ConfigValidationError, load_config, sanitize_output_dir, validate_hex_color
+from buildsite.config import (
+    ConfigValidationError,
+    get_default_config,
+    load_config,
+    sanitize_output_dir,
+    validate_config,
+    validate_hex_color,
+)
+from buildsite.models import UserConfig
 
 
 def test_sanitize_output_dir_blocks_traversal_and_unsafe_paths():
@@ -64,3 +72,45 @@ def test_load_config_explicit_nonexistent_path_raises_error(tmp_path):
     missing_path = tmp_path / "nonexistent_buildsite.yml"
     with pytest.raises(ConfigValidationError, match="Configuration file not found"):
         load_config(str(missing_path))
+
+
+def test_validate_config_and_default_helper():
+    # Default config is valid
+    default_cfg = get_default_config()
+    assert isinstance(default_cfg, UserConfig)
+    assert default_cfg.width == 1280
+    assert default_cfg.height == 640
+
+    # Non-UserConfig raises error
+    with pytest.raises(ConfigValidationError, match="Expected UserConfig"):
+        validate_config("not a config")
+
+    # Invalid width
+    with pytest.raises(ConfigValidationError, match="Invalid width"):
+        bad_width = UserConfig(width=200)
+        validate_config(bad_width)
+
+    # Invalid height
+    with pytest.raises(ConfigValidationError, match="Invalid height"):
+        bad_height = UserConfig(height=100)
+        validate_config(bad_height)
+
+    # Invalid format
+    with pytest.raises(ConfigValidationError, match="Invalid format"):
+        bad_fmt = UserConfig(format="bmp")
+        validate_config(bad_fmt)
+
+    # Invalid lighting
+    with pytest.raises(ConfigValidationError, match="Invalid lighting"):
+        bad_lighting = UserConfig(lighting="sunset")
+        validate_config(bad_lighting)
+
+    # Invalid animation
+    with pytest.raises(ConfigValidationError, match="Invalid animation"):
+        bad_anim = UserConfig(animation="bouncy")
+        validate_config(bad_anim)
+
+    # Unsafe output directory
+    with pytest.raises(ConfigValidationError, match="Unsafe output directory"):
+        bad_dir = UserConfig(output_dir="../escape")
+        validate_config(bad_dir)
