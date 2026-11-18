@@ -7,7 +7,7 @@ import pytest
 from PIL import Image
 
 from buildsite.composer import composite_property, find_assets_directory
-from buildsite.models import ContributionSnapshot, PropertyState, UserConfig
+from buildsite.models import ContributionSnapshot, PropertyState, PropertyVariation, UserConfig
 from buildsite.progression import calculate_property_state
 from buildsite.svg_export import (
     escape_xml_text,
@@ -213,6 +213,20 @@ def test_property_variation_derivation_guards():
     var = derive_property_variation(None, preferred_style=None)
     assert var.seed == "default_buildsite_seed"
     assert var.style_name in {"modern_minimal", "warm_timber", "slate_stone", "coastal_white"}
+
+    var_ws = derive_property_variation("   \t  ", preferred_style="auto")
+    assert var_ws.seed == "default_buildsite_seed"
+
+    # PropertyVariation to_dict / from_dict roundtrip
+    d = var.to_dict()
+    assert d["seed"] == "default_buildsite_seed"
+    assert d["style_name"] == var.style_name
+    recreated = PropertyVariation.from_dict(d)
+    assert recreated == var
+
+    # from_dict empty / invalid fallback
+    fallback_var = PropertyVariation.from_dict(None)
+    assert fallback_var.style_name == "modern_minimal"
 
     style = get_style_palette_by_name(None)
     assert style.name == "modern_minimal"
