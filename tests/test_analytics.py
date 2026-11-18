@@ -62,3 +62,16 @@ def test_conditional_etag_cache_ttl_304_revalidation_and_lru():
     stats = cache.stats()
     assert stats["entries"] == 2
     assert stats["hits_304"] == 1
+
+
+def test_conditional_etag_cache_miss_on_unmapped_304_and_key_normalization():
+    cache = ConditionalETagCache(max_entries=4)
+    cache.store("  user:octocat  ", {"data": 123}, etag='W/"xyz"')
+    assert cache.get_fresh("user:octocat") == {"data": 123}
+
+    assert cache.handle_not_modified("user:unknown") is None
+    assert cache.stats()["misses"] == 1
+
+    import pytest
+    with pytest.raises(ValueError, match="cache key cannot be empty"):
+        cache.get_fresh("   ")
